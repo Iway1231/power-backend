@@ -54,6 +54,14 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
     if img is None:
         return None
 
+    if detect_no_outages(img):
+        return {
+            "groups": {},
+            "date": None,
+            "confidence": 0.9,
+            "type": "NO_OUTAGES",
+        }
+
     date = extract_date_strict(img)
 
     tiles = split_tiles(img)
@@ -80,6 +88,17 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
     }
 
 
+def detect_no_outages(img: np.ndarray) -> bool:
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    text = pytesseract.image_to_string(gray, lang="ukr+eng", config="--psm 6").lower()
+    normalized = re.sub(r"\s+", " ", text)
+    return (
+        "без стабілізаційних" in normalized
+        and "відключень" in normalized
+    )
+
+
 # ======================================================
 # DATE
 # ======================================================
@@ -87,6 +106,17 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
 def extract_date_strict(img: np.ndarray) -> Optional[str]:
     h, w, _ = img.shape
     candidates = []
+
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, (5, 60, 80), (35, 255, 255))
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        x, y, cw, ch = cv2.boundingRect(contour)
+        if 40 < cw < 180 and 10 < ch < 60 and y < h * 0.25:
+            crop = img[max(0, y - 3):min(h, y + ch + 3), max(0, x - 3):min(w, x + cw + 3)]
+            gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            gray_crop = cv2.resize(gray_crop, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+            candidates.append((gray_crop, "--psm 7 -c tessedit_char_whitelist=0123456789."))
 
     roi = img[int(h * 0.05):int(h * 0.17), int(w * 0.35):int(w * 0.65)]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
