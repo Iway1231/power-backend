@@ -1,0 +1,26 @@
+venv/
+.venv/
+.vs/
+
+__pycache__/
+*/__pycache__/
+.pytest_cache/
+*.pyc
+
+last_status.json
+powerstatus_session.session
+
+/debug/
+/cache/
+/images/
+/history/
+/data/
+/app/tests/
+
+# Local portable Tesseract installation. Install Tesseract separately
+# or keep only the required language files outside git.
+tessdata/
+/*.dll
+/*.exe
+/*.1.html
+/*.5.html

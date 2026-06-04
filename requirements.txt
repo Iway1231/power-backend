@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+httpx
+feedparser
+pillow
+pytesseract
+python-dateutil
+beautifulsoup4
+lxml
