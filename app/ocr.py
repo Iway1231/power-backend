@@ -32,6 +32,7 @@ ROWS = [
 VALID_INTERVALS = {
     "00:00-04:00",
     "04:00-08:00",
+    "06:00-08:00",
     "08:00-12:00",
     "12:00-16:00",
     "16:00-20:00",
@@ -39,8 +40,23 @@ VALID_INTERVALS = {
     "20:00-23:59",
 }
 
+TIME_SEPARATORS = [
+    "\u043f\u043e",  # по
+    "\u0448\u043e",  # шо
+    "\u0442\u043e",  # то
+    "ho",
+    "no",
+    "mo",
+    "ne",
+    "zo",
+    "-",
+    "\u2013",
+    "\u2014",
+]
 TIME_RE = re.compile(
-    r"(\d{1,2})[:.,](\d{2})\s*(?:по|шо|то|ho|no|mo|zo|-|–|—)\s*(\d{1,2})[:.,](\d{2})"
+    r"(\d{1,2})[:.,](\d{2})\s*(?:"
+    + "|".join(re.escape(separator) for separator in TIME_SEPARATORS)
+    + r")\s*(\d{1,2})[:.,](\d{2})"
 )
 
 
@@ -213,14 +229,8 @@ def restore_rows(groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
         ga = set(out.get(a, []))
         gb = set(out.get(b, []))
 
-        # 🔹 якщо одна клітинка ПУСТА — відновлюємо
-        if ga and not gb:
-            out[b] = list(ga)
-        elif gb and not ga:
-            out[a] = list(gb)
-
         # 🔹 якщо різниця 1 інтервал → OCR шум
-        elif ga and gb:
+        if ga and gb:
             if abs(len(ga) - len(gb)) == 1:
                 merged = sorted(ga | gb)
                 out[a] = merged
