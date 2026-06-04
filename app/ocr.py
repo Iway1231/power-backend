@@ -40,7 +40,7 @@ VALID_INTERVALS = {
 }
 
 TIME_RE = re.compile(
-    r"(\d{1,2})[:.,](\d{2})\s*(?:по|шо|ho|no|zo|-|–|—)\s*(\d{1,2})[:.,](\d{2})"
+    r"(\d{1,2})[:.,](\d{2})\s*(?:по|шо|то|ho|no|mo|zo|-|–|—)\s*(\d{1,2})[:.,](\d{2})"
 )
 
 
@@ -86,27 +86,30 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
 
 def extract_date_strict(img: np.ndarray) -> Optional[str]:
     h, w, _ = img.shape
-    roi = img[int(h * 0.05):int(h * 0.17), int(w * 0.35):int(w * 0.65)]
+    candidates = []
 
+    roi = img[int(h * 0.05):int(h * 0.17), int(w * 0.35):int(w * 0.65)]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    candidates.append((thresh, "--psm 7 -c tessedit_char_whitelist=0123456789."))
 
-    raw = pytesseract.image_to_string(
-        thresh,
-        lang="eng",
-        config="--psm 7 -c tessedit_char_whitelist=0123456789."
-    )
+    wide_roi = img[int(h * 0.04):int(h * 0.14), int(w * 0.20):int(w * 0.75)]
+    wide_gray = cv2.cvtColor(wide_roi, cv2.COLOR_BGR2GRAY)
+    wide_gray = cv2.resize(wide_gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+    candidates.append((wide_gray, "--psm 6"))
 
-    nums = re.findall(r"\d+", raw)
-    if len(nums) != 3:
-        return None
+    for candidate, config in candidates:
+        raw = pytesseract.image_to_string(candidate, lang="eng", config=config)
+        match = re.search(r"(\d{1,2})\D+(\d{1,2})\D+(\d{4})", raw)
+        if not match:
+            continue
 
-    d, m, y = map(int, nums)
-    if not (1 <= d <= 31 and 1 <= m <= 12 and 2020 <= y <= 2030):
-        return None
+        d, m, y = map(int, match.groups())
+        if 1 <= d <= 31 and 1 <= m <= 12 and 2020 <= y <= 2030:
+            return f"{y:04d}-{m:02d}-{d:02d}"
 
-    return f"{y:04d}-{m:02d}-{d:02d}"
+    return None
 
 
 # ======================================================
