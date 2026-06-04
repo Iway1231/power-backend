@@ -53,14 +53,27 @@ async def get_power_status():
     posts = await fetch_latest_posts(limit=20)
 
     for post in reversed(posts):
-        if not post.get("image"):
-            continue
+        parsed_text = parse_power_text(post.get("text", ""))
+        if parsed_text:
+            return save_status(parsed_text)
 
         try:
+            if not post.get("image"):
+                continue
+
             image_path = await download_image(post["image"])
             ocr = extract_schedule_from_image(image_path)
             if not ocr:
                 continue
+
+            if ocr.get("type") == "NO_OUTAGES":
+                date = merge_date(ocr.get("date"), post.get("published_at"))
+                return save_status({
+                    "type": "DAILY_STATUS",
+                    "message": "Відключень не заплановано",
+                    "date": date,
+                    "confidence": ocr.get("confidence", 0.9),
+                })
 
             groups = build_group_state(ocr.get("groups", {}))
             date = merge_date(ocr.get("date"), post.get("published_at"))
@@ -91,7 +104,9 @@ def save_status(parsed: dict) -> PowerStatus:
         "city": config.CITY_NAME,
         "operator": config.OPERATOR,
         "type": parsed["type"],
-        "groups": parsed["groups"],
+        "message": parsed.get("message"),
+        "groups": parsed.get("groups"),
+        "intervals": parsed.get("intervals"),
         "date": parsed["date"],
         "updatedAt": datetime.now().isoformat(),
         "confidence": parsed.get("confidence", 1.0),

@@ -1,6 +1,8 @@
 ﻿import re
 from typing import Optional
 
+from app.group_directory import infer_groups_for_address
+
 
 # =========================================================
 # DEBUG
@@ -135,6 +137,10 @@ def parse_power_text(text: str) -> Optional[dict]:
     t = text.lower()
     date = extract_date(t)
 
+    planned_outage = parse_planned_outage(text)
+    if planned_outage:
+        return planned_outage
+
     # =========================
     # CASE 2: ІДЕАЛЬНИЙ ТЕКСТ (НЕ OCR)
     # =========================
@@ -213,6 +219,79 @@ def extract_time_ranges(text: str) -> list[str]:
     return sorted(result)
 
 
+def parse_planned_outage(text: str) -> Optional[dict]:
+    has_outage_text = (
+        "припинення електропостачання" in text
+        or "буде припинено електропостачання" in text
+    )
+    if not has_outage_text:
+        return None
+
+    date = extract_date(text)
+    time_match = re.search(
+        r"з\s*(\d{1,2}:\d{2})\s*(?:до|по|-|–|—)\s*(\d{1,2}:\d{2})",
+        text,
+        re.IGNORECASE,
+    )
+    if not time_match:
+        return None
+
+    start = fix_time(time_match.group(1))
+    end = fix_time(time_match.group(2))
+    if not start or not end:
+        return None
+
+    address = extract_planned_address(text)
+    group = extract_planned_group(text)
+    interval = {
+        "from_time": start,
+        "to_time": end,
+        "status": "OFF",
+    }
+    if address:
+        interval["address"] = address
+        inferred_groups = infer_groups_for_address(address)
+        if len(inferred_groups) == 1:
+            interval["group"] = inferred_groups[0]
+        elif inferred_groups:
+            interval["groups"] = inferred_groups
+    if group:
+        interval["group"] = group
+
+    return {
+        "type": "PLANNED_OUTAGE",
+        "message": "Тимчасове припинення електропостачання",
+        "intervals": [interval],
+        "date": date,
+        "confidence": 1.0,
+    }
+
+
+def extract_planned_address(text: str) -> Optional[str]:
+    match = re.search(
+        r"(?:споживачів\s+по|для\s+споживачів)\s+(.+?)(?:⚡|просимо|$)",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+
+    address = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+    return address or None
+
+
+def extract_planned_group(text: str) -> Optional[str]:
+    match = re.search(
+        r"споживачів\s+групи\s+(\d+(?:[.,]\d+)?)",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    return match.group(1).replace(",", ".")
+
+
 def map_times_to_groups(active_ranges: list[str]) -> dict:
     result = {}
     for g, ranges in GROUP_TEMPLATE.items():
@@ -233,6 +312,40 @@ def fix_time(t: str) -> Optional[str]:
 
 
 def extract_date(text: str) -> Optional[str]:
+    dotted = re.search(r"\b(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})\b", text)
+    if dotted:
+        d, m, y = map(int, dotted.groups())
+        if 1 <= d <= 31 and 1 <= m <= 12:
+            return f"{y:04d}-{m:02d}-{d:02d}"
+
+    month_names = {
+        "січня": 1,
+        "лютого": 2,
+        "березня": 3,
+        "квітня": 4,
+        "травня": 5,
+        "червня": 6,
+        "липня": 7,
+        "серпня": 8,
+        "вересня": 9,
+        "жовтня": 10,
+        "листопада": 11,
+        "грудня": 12,
+    }
+    text_date = re.search(
+        r"\b(\d{1,2})\s+("
+        + "|".join(month_names)
+        + r")\s+(20\d{2})\s*(?:р|року)?",
+        text,
+        re.IGNORECASE,
+    )
+    if text_date:
+        d = int(text_date.group(1))
+        m = month_names[text_date.group(2).lower()]
+        y = int(text_date.group(3))
+        if 1 <= d <= 31:
+            return f"{y:04d}-{m:02d}-{d:02d}"
+
     matches = re.findall(r"(\d{2,4})\s*(202\d)", text)
     for left, year in matches:
         digits = re.sub(r"\D", "", left)[-4:]

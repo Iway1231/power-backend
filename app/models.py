@@ -25,7 +25,7 @@ class PowerStatus(BaseModel):
     message: Optional[str] = None
 
     # для текстових статусів
-    intervals: Optional[List[str]] = None
+    intervals: Optional[List[dict]] = None
 
     # 🔥 ГОЛОВНЕ — groups -> GroupSchedule
     groups: Optional[Dict[str, GroupSchedule]] = None
