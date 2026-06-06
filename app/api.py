@@ -235,12 +235,59 @@ def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]
     }
 
 
+def build_detail(label: str, value) -> dict:
+    return {
+        "label": label,
+        "value": value,
+    }
+
+
+def format_loe_subtitle(loe: Optional[dict]) -> str:
+    if not loe:
+        return "Групи адреси не знайдено"
+
+    labels = {
+        "gpv": "ГПВ",
+        "gav": "ГАВ",
+        "sgav": "СГАВ",
+        "achr": "АЧР",
+        "gvsp": "ГВСП",
+    }
+    parts = [
+        f"{label} {loe[key]}"
+        for key, label in labels.items()
+        if loe.get(key)
+    ]
+    return ", ".join(parts) if parts else "Групи адреси не знайдено"
+
+
+def build_loe_details(loe: Optional[dict]) -> List[dict]:
+    if not loe:
+        return []
+
+    labels = {
+        "gpv": "ГПВ",
+        "gav": "ГАВ",
+        "sgav": "СГАВ",
+        "achr": "АЧР",
+        "gvsp": "ГВСП",
+    }
+    return [
+        build_detail(label, loe[key])
+        for key, label in labels.items()
+        if loe.get(key)
+    ]
+
+
 def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] = None) -> dict:
     if group not in GROUP_ORDER:
         return {
             "operator": "naftogaz",
             "group": group,
             "has_outage": None,
+            "title": "Невідома група",
+            "subtitle": "Перевірте вибрану групу Нафтогазу",
+            "details": [build_detail("Група", group)],
             "message": "Невідома група Нафтогазу",
             "source": status,
         }
@@ -255,6 +302,13 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
             "has_outage": has_outage,
             "status": "OFF" if has_outage else "ON",
             "outages": outages,
+            "title": "Зараз є відключення" if has_outage else "Світло має бути",
+            "subtitle": f"Група {group}: {', '.join(outages)}" if has_outage else f"Для групи {group} відключень не заплановано",
+            "details": [
+                build_detail("Група", group),
+                build_detail("Дата", status.get("date")),
+                build_detail("Інтервали", outages),
+            ],
             "message": "Є відключення" if has_outage else "Відключень не заплановано",
             "date": status.get("date"),
             "source_type": status.get("type"),
@@ -281,6 +335,13 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
             "has_outage": has_outage,
             "status": "OFF" if has_outage else "ON",
             "intervals": matching_intervals,
+            "title": "Є планове відключення" if has_outage else "Світло має бути",
+            "subtitle": f"Для групи {group} знайдено планове відключення" if has_outage else f"Для групи {group} планового відключення не знайдено",
+            "details": [
+                build_detail("Група", group),
+                build_detail("Дата", status.get("date")),
+                build_detail("Інтервали", matching_intervals),
+            ],
             "message": "Є планове відключення" if has_outage else "Для цієї групи планового відключення не знайдено",
             "date": status.get("date"),
             "source_type": status.get("type"),
@@ -292,6 +353,12 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
         "has_outage": False,
         "status": "ON",
         "outages": [],
+        "title": "Світло має бути",
+        "subtitle": status.get("message") or "Відключень не заплановано",
+        "details": [
+            build_detail("Група", group),
+            build_detail("Дата", status.get("date")),
+        ],
         "message": status.get("message") or "Відключень не заплановано",
         "date": status.get("date"),
         "source_type": status.get("type"),
@@ -303,6 +370,9 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
         return {
             "operator": "loe",
             "has_outage": None,
+            "title": "Адресу не знайдено",
+            "subtitle": "Перевірте населений пункт, вулицю і будинок",
+            "details": [],
             "message": "Адресу Львівобленерго не знайдено",
         }
 
@@ -310,12 +380,16 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
         return {
             "operator": "loe",
             "has_outage": None,
+            "title": "Адресу не знайдено",
+            "subtitle": "Перевірте населений пункт, вулицю і будинок",
+            "details": [],
             "message": "Адресу Львівобленерго не знайдено",
             "error": lookup.get("error"),
-            "details": lookup,
+            "error_details": lookup,
         }
 
     has_outage = bool(lookup.get("disconnection_task"))
+    loe = lookup.get("loe")
     return {
         "operator": "loe",
         "city": lookup.get("city"),
@@ -323,8 +397,11 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
         "building": lookup.get("building"),
         "has_outage": has_outage,
         "status": "OFF" if has_outage else "UNKNOWN",
+        "title": "Є активне відключення" if has_outage else "Групи адреси отримано",
+        "subtitle": format_loe_subtitle(loe),
+        "details": build_loe_details(loe),
         "message": "Є активне завдання на відключення" if has_outage else "Групи адреси отримано",
-        "loe": lookup.get("loe"),
+        "loe": loe,
         "disconnection_task": lookup.get("disconnection_task"),
         "planned_replace_counter": lookup.get("planned_replace_counter"),
     }
