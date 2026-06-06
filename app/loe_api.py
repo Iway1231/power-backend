@@ -1,4 +1,7 @@
+import copy
+import os
 import re
+import time
 from typing import Any, Optional
 
 import httpx
@@ -6,6 +9,8 @@ import httpx
 
 BASE_URL = "https://power-api.loe.lviv.ua/api"
 NOT_INCLUDED_TEXT = "Не входить"
+LOE_CACHE_TTL_SECONDS = int(os.getenv("LOE_CACHE_TTL_SECONDS", "300"))
+_LOE_CACHE: dict[tuple, tuple[float, dict]] = {}
 
 
 async def fetch_loe_cities(otg_id: Optional[int] = None) -> list[dict]:
@@ -38,6 +43,10 @@ async def fetch_loe_accounts(city_id: int, street_id: int) -> list[dict]:
 
 
 async def fetch_loe_collection(path: str, params: dict) -> dict:
+    cached = get_cached_loe_collection(path, params)
+    if cached is not None:
+        return cached
+
     headers = {
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://poweron.loe.lviv.ua/",
@@ -45,7 +54,38 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(f"{BASE_URL}/{path}", params=params, headers=headers)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        set_cached_loe_collection(path, params, data)
+        return data
+
+
+def get_loe_cache_key(path: str, params: dict) -> tuple:
+    return path, tuple(sorted((key, str(value)) for key, value in params.items()))
+
+
+def get_cached_loe_collection(path: str, params: dict, now: Optional[float] = None) -> Optional[dict]:
+    key = get_loe_cache_key(path, params)
+    cached = _LOE_CACHE.get(key)
+    if not cached:
+        return None
+
+    cached_at, data = cached
+    now = time.time() if now is None else now
+    if now - cached_at > LOE_CACHE_TTL_SECONDS:
+        _LOE_CACHE.pop(key, None)
+        return None
+
+    return copy.deepcopy(data)
+
+
+def set_cached_loe_collection(path: str, params: dict, data: dict, now: Optional[float] = None) -> None:
+    key = get_loe_cache_key(path, params)
+    cached_at = time.time() if now is None else now
+    _LOE_CACHE[key] = cached_at, copy.deepcopy(data)
+
+
+def clear_loe_cache() -> None:
+    _LOE_CACHE.clear()
 
 
 async def lookup_loe_address(

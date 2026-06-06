@@ -1,10 +1,13 @@
 from app.loe_api import (
     available_buildings,
     clean_loe_value,
+    clear_loe_cache,
     common_loe_groups,
     find_loe_account,
     find_named_item,
+    get_cached_loe_collection,
     parse_loe_account,
+    set_cached_loe_collection,
 )
 
 
@@ -83,3 +86,26 @@ def test_common_loe_groups_returns_street_default():
         "achr": None,
         "gvsp": None,
     }
+
+
+def test_loe_cache_returns_copy():
+    clear_loe_cache()
+    params = {"pagination": "false", "city.id": 1053}
+    data = {"hydra:member": [{"id": 1, "name": "Шкло"}]}
+
+    set_cached_loe_collection("pw_streets", params, data, now=100)
+    cached = get_cached_loe_collection("pw_streets", params, now=101)
+    cached["hydra:member"][0]["name"] = "changed"
+
+    assert get_cached_loe_collection("pw_streets", params, now=102) == data
+
+
+def test_loe_cache_expires(monkeypatch):
+    clear_loe_cache()
+    monkeypatch.setattr("app.loe_api.LOE_CACHE_TTL_SECONDS", 300)
+    params = {"pagination": "false"}
+
+    set_cached_loe_collection("pw_cities", params, {"hydra:member": []}, now=100)
+
+    assert get_cached_loe_collection("pw_cities", params, now=399) is not None
+    assert get_cached_loe_collection("pw_cities", params, now=401) is None
