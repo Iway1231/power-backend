@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Optional
 
 
 GROUP_CONSUMERS = {
@@ -66,6 +66,37 @@ ADDRESS_KEYWORDS = {
 }
 
 
+SETTLEMENT_GROUPS: dict[str, Optional[str]] = {
+    "м. Новояворівськ": None,
+    "смт. Шкло": "1.2",
+    "с-ще Шкло": "1.2",
+    "с. Шкло": "1.2",
+    "с. Батоги": "1.2",
+    "с. Бердихів": None,
+    "с. Воля-Добростанська": None,
+    "с. Воля-Старицька": None,
+    "с. Добростани": None,
+    "с. Кам'янобрід": None,
+    "с. Кам’янобрід": None,
+    "с. Качмарі": None,
+    "с. Кертинів": None,
+    "с. Когути": None,
+    "с. Ліс": "1.2",
+    "с. Молошковичі": None,
+    "с. Мужиловичі": None,
+    "с. Окілки": "1.2",
+    "с. Підлуби": None,
+    "с. Прилбичі": None,
+    "с. Рулево": None,
+    "с. Солиги": None,
+    "с. Стадники": "3.1",
+    "с. Старичі": "4.2",
+    "с. Стені": None,
+    "с. Терновиця": None,
+    "с. Чолгині": None,
+}
+
+
 def infer_groups_for_address(address: str) -> List[str]:
     if not address:
         return []
@@ -80,6 +111,25 @@ def infer_groups_for_address(address: str) -> List[str]:
                 break
 
     return sorted(set(matched))
+
+
+def infer_settlements_for_address(address: str) -> List[dict]:
+    if not address:
+        return []
+
+    normalized_address = normalize_address(address)
+    matched = []
+
+    for settlement, group in SETTLEMENT_GROUPS.items():
+        if normalize_address(settlement) in normalized_address:
+            settlement_match = {
+                "name": settlement,
+            }
+            if group:
+                settlement_match["naftogaz"] = {"group": group}
+            matched.append(settlement_match)
+
+    return matched
 
 
 def normalize_address(value: str) -> str:

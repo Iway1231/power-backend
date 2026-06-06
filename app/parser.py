@@ -1,7 +1,7 @@
 ﻿import re
 from typing import Optional
 
-from app.group_directory import infer_groups_for_address
+from app.group_directory import infer_groups_for_address, infer_settlements_for_address
 
 
 # =========================================================
@@ -220,9 +220,10 @@ def extract_time_ranges(text: str) -> list[str]:
 
 
 def parse_planned_outage(text: str) -> Optional[dict]:
+    normalized_text = text.lower()
     has_outage_text = (
-        "припинення електропостачання" in text
-        or "буде припинено електропостачання" in text
+        "припинення електропостачання" in normalized_text
+        or "буде припинено електропостачання" in normalized_text
     )
     if not has_outage_text:
         return None
@@ -250,13 +251,17 @@ def parse_planned_outage(text: str) -> Optional[dict]:
     }
     if address:
         interval["address"] = address
+        settlements = infer_settlements_for_address(address)
+        if settlements:
+            interval["settlements"] = settlements
+
         inferred_groups = infer_groups_for_address(address)
         if len(inferred_groups) == 1:
-            interval["group"] = inferred_groups[0]
+            interval["naftogaz"] = {"group": inferred_groups[0]}
         elif inferred_groups:
-            interval["groups"] = inferred_groups
+            interval["naftogaz"] = {"groups": inferred_groups}
     if group:
-        interval["group"] = group
+        interval["naftogaz"] = {"group": group}
 
     return {
         "type": "PLANNED_OUTAGE",

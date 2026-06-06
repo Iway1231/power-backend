@@ -61,7 +61,23 @@ Example planned outage response:
       "to_time": "16:00",
       "status": "OFF",
       "address": "с. Ліс та с. Окілки",
-      "group": "1.2"
+      "settlements": [
+        {
+          "name": "с. Ліс",
+          "naftogaz": {
+            "group": "1.2"
+          }
+        },
+        {
+          "name": "с. Окілки",
+          "naftogaz": {
+            "group": "1.2"
+          }
+        }
+      ],
+      "naftogaz": {
+        "group": "1.2"
+      }
     }
   ],
   "date": "2026-05-19",
@@ -118,6 +134,6 @@ pytest tests/test_no_magic_restore.py tests/test_planned_outage_text.py tests/te
 - `images/`, `debug/`, `cache/`, `history/`, `data/`, `.vs/`, and `venv/` are local working folders and are ignored by git.
 - `app/ocr.py` handles schedule image OCR.
 - `app/parser.py` handles text post parsing.
-- `app/group_directory.py` maps known addresses and villages to outage groups.
+- `app/group_directory.py` maps known addresses and villages to Naftogaz outage groups.
+- Lvivoblenergo groups must stay separate from Naftogaz groups. Use a separate `loe` object for `gpv`, `gav`, and `sgav` data when that source is integrated.
 - `app/api.py` combines Telegram fetching, OCR parsing, text parsing, and the `/status` response.
-
