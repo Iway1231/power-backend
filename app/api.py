@@ -10,6 +10,7 @@ from app import config
 from app.models import PowerStatus
 from app.telegram_html import fetch_latest_posts
 from app.image_loader import download_image
+from app.group_directory import list_naftogaz_addresses
 from app.loe_api import (
     available_buildings,
     fetch_loe_accounts,
@@ -87,6 +88,11 @@ async def get_loe_buildings(city: str, street: str):
 @router.get("/loe/lookup")
 async def get_loe_lookup(city: str, street: str, building: str):
     return await lookup_loe_address(city, street, building, debug=True)
+
+
+@router.get("/naftogaz/addresses")
+def get_naftogaz_addresses(group: Optional[str] = None):
+    return list_naftogaz_addresses(group)
 
 
 def build_group_state(groups: Dict[str, List[str]]) -> Dict[str, dict]:

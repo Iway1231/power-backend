@@ -97,6 +97,80 @@ SETTLEMENT_GROUPS: dict[str, Optional[str]] = {
 }
 
 
+NAFTOGAZ_ADDRESSES = [
+    {"group": "1.1", "type": "industrial_zone", "name": "Промзона «Техкомплекс» колишньої «СІРКИ»", "buildings": None},
+    {"group": "1.2", "type": "industrial_zone", "name": "Промзона «Дирекція» колишньої «СІРКИ»", "buildings": None},
+    {"group": "1.2", "type": "residential_area", "name": "Житловий масив «Дачі»", "buildings": None},
+    {"group": "1.2", "type": "residential_area", "name": "Житловий масив «Дачі 2»", "buildings": None},
+    {"group": "1.2", "type": "residential_area", "name": "Житловий масив «Гірник»", "buildings": None},
+    {"group": "1.2", "type": "residential_area", "name": "ж/м «Нафтуся»", "buildings": None},
+    {"group": "1.2", "type": "street", "name": "Курортна", "settlement": "Шкло", "buildings": None},
+    {"group": "1.2", "type": "facility", "name": "КТП «Киця»", "settlement": "Шкло", "buildings": None},
+    {"group": "1.2", "type": "settlement", "name": "Шкло", "buildings": None},
+    {"group": "1.2", "type": "settlement", "name": "Батоги", "buildings": None},
+    {"group": "1.2", "type": "settlement", "name": "Ліс", "buildings": None},
+    {"group": "1.2", "type": "settlement", "name": "Окілки", "buildings": None},
+    {"group": "2.1", "type": "street", "city": "Новояворівськ", "name": "Січових Стрільців", "buildings": ["1", "2", "4", "6"]},
+    {"group": "2.1", "type": "street", "city": "Новояворівськ", "name": "50-річчя УПА", "buildings": ["1", "3", "5"]},
+    {"group": "2.1", "type": "street", "city": "Новояворівськ", "name": "А. Шептицького", "buildings": ["1"]},
+    {"group": "2.1", "type": "street", "city": "Новояворівськ", "name": "С. Бандери", "buildings": ["2", "4", "6", "8"]},
+    {"group": "2.2", "type": "street", "city": "Новояворівськ", "name": "С. Бандери", "buildings": ["10", "12", "14", "16", "18", "20", "21А", "24", "26", "28", "30", "32", "34"]},
+    {"group": "2.2", "type": "street", "city": "Новояворівськ", "name": "Січових Стрільців", "buildings": ["5", "9", "9А", "11", "13", "15", "20"]},
+    {"group": "2.2", "type": "street", "city": "Новояворівськ", "name": "Львівська", "buildings": ["13", "15", "17", "19", "21", "23"]},
+    {"group": "2.2", "type": "street", "city": "Новояворівськ", "name": "І. Франка", "buildings": ["1", "4", "6", "9"]},
+    {"group": "3.1", "type": "residential_area", "name": "Житловий масив К-4", "buildings": None},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Джерельна", "buildings": None},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Золота", "buildings": None},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Каштанова", "buildings": None},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Лісова", "buildings": None},
+    {"group": "3.1", "type": "settlement", "name": "Стадники", "buildings": None},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Приозерна", "buildings": ["3А", "3Б", "3В", "3Г", "3Д", "3Е", "5", "7"]},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Т. Шевченка", "buildings": ["1", "3", "5", "5А", "7", "7Б", "13", "15", "17", "21"]},
+    {"group": "3.1", "type": "street", "city": "Новояворівськ", "name": "Ю. Липи", "buildings": ["1", "1А", "3", "5", "7", "9"]},
+    {"group": "3.2", "type": "street", "city": "Новояворівськ", "name": "М. Вербицького", "buildings": ["10А", "12", "12А", "16", "18", "20", "22", "24"]},
+    {"group": "3.2", "type": "street", "city": "Новояворівськ", "name": "Гориня", "buildings": ["2", "4"]},
+    {"group": "3.2", "type": "facility", "name": "Йоха Україна", "buildings": None},
+    {"group": "3.2", "type": "facility", "name": "Профільпласт", "buildings": None},
+    {"group": "4.1", "type": "street", "city": "Новояворівськ", "name": "Р. Шухевича", "buildings": ["6А", "8", "11", "12"]},
+    {"group": "4.1", "type": "street", "city": "Новояворівськ", "name": "М. Вербицького", "buildings": ["3", "9", "9А", "11", "11А", "13", "15", "17", "19"]},
+    {"group": "4.1", "type": "street", "city": "Новояворівськ", "name": "Ю. Липи", "buildings": ["2", "4", "8", "9", "10", "11", "12", "14"]},
+    {"group": "4.1", "type": "street", "city": "Новояворівськ", "name": "Т. Шевченка", "buildings": ["4", "6", "8А", "8Б", "8В", "8Г", "10", "12", "14", "16"]},
+    {"group": "4.2", "type": "street", "city": "Новояворівськ", "name": "Т. Шевченка", "buildings": ["23", "24", "25", "26", "27"]},
+    {"group": "4.2", "type": "street", "name": "Шептицького", "settlement": "Старичі", "note": "Доси", "buildings": None},
+    {"group": "4.2", "type": "settlement", "name": "Старичі", "buildings": None},
+    {"group": "5.1", "type": "street", "city": "Новояворівськ", "name": "С. Бандери", "buildings": ["1", "3", "5", "7", "9", "11", "13", "15", "17", "19"]},
+    {"group": "5.1", "type": "street", "city": "Новояворівськ", "name": "Р. Шухевича", "buildings": ["1", "4", "6"]},
+    {"group": "5.1", "type": "street", "city": "Новояворівськ", "name": "М. Вербицького", "buildings": ["1", "1А"]},
+    {"group": "5.1", "type": "street", "city": "Новояворівськ", "name": "І. Мазепи", "buildings": ["1", "3", "5", "7", "9", "9А"]},
+    {"group": "5.1", "type": "street", "city": "Новояворівськ", "name": "Т. Шевченка", "buildings": ["2"]},
+    {"group": "5.2", "type": "street", "city": "Новояворівськ", "name": "Привокзальна", "note": "Промзона м. Новояворівська", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Львівська", "buildings": ["1", "3", "5", "7", "9", "11"]},
+    {"group": "6.1", "type": "residential_area", "name": "Житловий масив К1", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Героїв Майдану", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Європейська", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Лісова", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Молодіжна", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Сонячна", "buildings": None},
+    {"group": "6.1", "type": "residential_area", "name": "Житловий масив «Синє очко»", "buildings": None},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "А. Шептицького", "buildings": ["3", "5", "5А", "7"]},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Січових Стрільців", "buildings": ["10", "12", "16/2А", "18"]},
+    {"group": "6.1", "type": "street", "city": "Новояворівськ", "name": "Зелена", "buildings": None},
+    {"group": "6.1", "type": "residential_area", "name": "ж/м «Приміський садівник»", "buildings": None},
+    {"group": "6.1", "type": "residential_area", "name": "Криве озеро", "buildings": None},
+    {"group": "6.2", "type": "facility", "name": "ресторан «Соната»", "buildings": None},
+    {"group": "6.2", "type": "residential_area", "name": "ж/м «Політраст»", "buildings": None},
+    {"group": "6.2", "type": "facility", "name": "Новояворівськводоканал ВЗВ-2", "buildings": None},
+    {"group": "6.2", "type": "facility", "name": "Тепловодосервіс ВЗВ-3", "buildings": None},
+]
+
+
+def list_naftogaz_addresses(group: Optional[str] = None) -> List[dict]:
+    if not group:
+        return NAFTOGAZ_ADDRESSES
+
+    return [address for address in NAFTOGAZ_ADDRESSES if address["group"] == group]
+
+
 def infer_groups_for_address(address: str) -> List[str]:
     if not address:
         return []

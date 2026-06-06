@@ -1,4 +1,8 @@
-from app.group_directory import infer_groups_for_address, infer_settlements_for_address
+from app.group_directory import (
+    infer_groups_for_address,
+    infer_settlements_for_address,
+    list_naftogaz_addresses,
+)
 
 
 def test_infer_group_for_shklo_and_kurortna():
@@ -27,3 +31,27 @@ def test_infer_multiple_community_settlements_without_groups():
         {"name": "с. Бердихів"},
         {"name": "с. Молошковичі"},
     ]
+
+
+def test_list_naftogaz_addresses_by_group():
+    addresses = list_naftogaz_addresses("2.1")
+
+    assert {
+        "group": "2.1",
+        "type": "street",
+        "city": "Новояворівськ",
+        "name": "Січових Стрільців",
+        "buildings": ["1", "2", "4", "6"],
+    } in addresses
+    assert all(address["group"] == "2.1" for address in addresses)
+
+
+def test_list_naftogaz_addresses_includes_settlements():
+    addresses = list_naftogaz_addresses("1.2")
+
+    assert {
+        "group": "1.2",
+        "type": "settlement",
+        "name": "Окілки",
+        "buildings": None,
+    } in addresses
