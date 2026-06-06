@@ -171,6 +171,17 @@ def list_naftogaz_addresses(group: Optional[str] = None) -> List[dict]:
     return [address for address in NAFTOGAZ_ADDRESSES if address["group"] == group]
 
 
+def list_naftogaz_groups(group_order: List[str]) -> List[dict]:
+    return [
+        {
+            "id": group,
+            "name": f"Група {group}",
+            "addresses": list_naftogaz_addresses(group),
+        }
+        for group in group_order
+    ]
+
+
 def infer_groups_for_address(address: str) -> List[str]:
     if not address:
         return []

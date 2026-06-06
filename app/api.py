@@ -10,7 +10,7 @@ from app import config
 from app.models import PowerStatus
 from app.telegram_html import fetch_latest_posts
 from app.image_loader import download_image
-from app.group_directory import list_naftogaz_addresses
+from app.group_directory import list_naftogaz_addresses, list_naftogaz_groups
 from app.loe_api import (
     available_buildings,
     fetch_loe_accounts,
@@ -93,6 +93,29 @@ async def get_loe_lookup(city: str, street: str, building: str):
 @router.get("/naftogaz/addresses")
 def get_naftogaz_addresses(group: Optional[str] = None):
     return list_naftogaz_addresses(group)
+
+
+@router.get("/operators")
+def get_operators():
+    return [
+        {
+            "id": "naftogaz",
+            "name": "Нафтогаз Тепло",
+            "status_url": "/my-status?operator=naftogaz&group={group}",
+            "selection": "group",
+        },
+        {
+            "id": "loe",
+            "name": "Львівобленерго",
+            "status_url": "/my-status?operator=loe&city={city}&street={street}&building={building}",
+            "selection": "address",
+        },
+    ]
+
+
+@router.get("/naftogaz/groups")
+def get_naftogaz_groups():
+    return list_naftogaz_groups(GROUP_ORDER)
 
 
 def build_group_state(groups: Dict[str, List[str]]) -> Dict[str, dict]:
