@@ -275,6 +275,38 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
     }
 
 
+def build_my_loe_status(lookup: Optional[dict]) -> dict:
+    if not lookup:
+        return {
+            "operator": "loe",
+            "has_outage": None,
+            "message": "Адресу Львівобленерго не знайдено",
+        }
+
+    if lookup.get("error"):
+        return {
+            "operator": "loe",
+            "has_outage": None,
+            "message": "Адресу Львівобленерго не знайдено",
+            "error": lookup.get("error"),
+            "details": lookup,
+        }
+
+    has_outage = bool(lookup.get("disconnection_task"))
+    return {
+        "operator": "loe",
+        "city": lookup.get("city"),
+        "street": lookup.get("street"),
+        "building": lookup.get("building"),
+        "has_outage": has_outage,
+        "status": "OFF" if has_outage else "UNKNOWN",
+        "message": "Є активне завдання на відключення" if has_outage else "Групи адреси отримано",
+        "loe": lookup.get("loe"),
+        "disconnection_task": lookup.get("disconnection_task"),
+        "planned_replace_counter": lookup.get("planned_replace_counter"),
+    }
+
+
 @router.get("/status", response_model=PowerStatus)
 async def get_power_status():
     posts = await fetch_latest_posts(limit=20)
@@ -318,11 +350,17 @@ async def get_power_status():
 
 
 @router.get("/my-status")
-async def get_my_status(operator: str, group: Optional[str] = None):
+async def get_my_status(
+    operator: str,
+    group: Optional[str] = None,
+    city: Optional[str] = None,
+    street: Optional[str] = None,
+    building: Optional[str] = None,
+):
     normalized_operator = operator.lower().strip()
-    status = (await get_power_status()).dict()
 
     if normalized_operator in ("naftogaz", "нафтогаз"):
+        status = (await get_power_status()).dict()
         if not group:
             return {
                 "operator": "naftogaz",
@@ -331,10 +369,21 @@ async def get_my_status(operator: str, group: Optional[str] = None):
             }
         return build_my_naftogaz_status(status, group)
 
+    if normalized_operator in ("loe", "львівобленерго", "lvivoblenergo"):
+        if not city or not street or not building:
+            return {
+                "operator": "loe",
+                "has_outage": None,
+                "message": "Для Львівобленерго потрібно передати city, street і building",
+            }
+
+        lookup = await lookup_loe_address(city, street, building, debug=True)
+        return build_my_loe_status(lookup)
+
     return {
         "operator": operator,
         "has_outage": None,
-        "message": "Поки підтримується тільки operator=naftogaz",
+        "message": "Підтримуються operator=naftogaz і operator=loe",
     }
 
 

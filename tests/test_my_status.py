@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from app.api import build_group_state, build_my_naftogaz_status, is_group_schedule_active
+import pytest
+
+from app.api import (
+    build_group_state,
+    build_my_loe_status,
+    build_my_naftogaz_status,
+    get_my_status,
+    is_group_schedule_active,
+)
 
 
 def test_my_naftogaz_status_for_group_schedule_outage():
@@ -88,3 +96,91 @@ def test_my_naftogaz_status_for_unknown_group():
 
     assert result["has_outage"] is None
     assert result["message"] == "Невідома група Нафтогазу"
+
+
+def test_my_loe_status_returns_address_groups():
+    lookup = {
+        "city": "Шкло",
+        "street": "1-го травня",
+        "building": "1",
+        "loe": {
+            "gpv": "2.2",
+            "gav": "6",
+            "sgav": None,
+            "achr": "4 (48.8Гц)",
+            "gvsp": None,
+        },
+        "disconnection_task": False,
+        "planned_replace_counter": False,
+    }
+
+    result = build_my_loe_status(lookup)
+
+    assert result == {
+        "operator": "loe",
+        "city": "Шкло",
+        "street": "1-го травня",
+        "building": "1",
+        "has_outage": False,
+        "status": "UNKNOWN",
+        "message": "Групи адреси отримано",
+        "loe": {
+            "gpv": "2.2",
+            "gav": "6",
+            "sgav": None,
+            "achr": "4 (48.8Гц)",
+            "gvsp": None,
+        },
+        "disconnection_task": False,
+        "planned_replace_counter": False,
+    }
+
+
+def test_my_loe_status_uses_disconnection_task_as_outage():
+    lookup = {
+        "city": "Шкло",
+        "street": "1-го травня",
+        "building": "1",
+        "loe": {"gpv": "2.2"},
+        "disconnection_task": True,
+        "planned_replace_counter": False,
+    }
+
+    result = build_my_loe_status(lookup)
+
+    assert result["has_outage"] is True
+    assert result["status"] == "OFF"
+    assert result["message"] == "Є активне завдання на відключення"
+
+
+def test_my_loe_status_returns_lookup_errors():
+    result = build_my_loe_status({"error": "building_not_found", "available_buildings": ["1"]})
+
+    assert result["has_outage"] is None
+    assert result["error"] == "building_not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_my_status_for_loe(monkeypatch):
+    async def fake_lookup_loe_address(city, street, building, debug=False):
+        return {
+            "city": city,
+            "street": street,
+            "building": building,
+            "loe": {"gpv": "2.2"},
+            "disconnection_task": False,
+            "planned_replace_counter": False,
+        }
+
+    monkeypatch.setattr("app.api.lookup_loe_address", fake_lookup_loe_address)
+
+    result = await get_my_status(
+        "loe",
+        city="Шкло",
+        street="1-го Травня",
+        building="1",
+    )
+
+    assert result["operator"] == "loe"
+    assert result["city"] == "Шкло"
+    assert result["loe"] == {"gpv": "2.2"}
