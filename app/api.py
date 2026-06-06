@@ -16,6 +16,7 @@ from app.loe_api import (
     fetch_loe_accounts,
     fetch_loe_cities,
     fetch_loe_streets,
+    get_loe_cache_status,
     find_named_item,
     item_names,
     lookup_loe_address,
@@ -116,6 +117,22 @@ def get_operators():
 @router.get("/naftogaz/groups")
 def get_naftogaz_groups():
     return list_naftogaz_groups(GROUP_ORDER)
+
+
+@router.get("/health")
+def get_health():
+    return {
+        "status": "ok",
+        "service": "power-backend",
+        "time": datetime.now().isoformat(),
+    }
+
+
+@router.get("/cache/status")
+def get_cache_status():
+    return {
+        "loe": get_loe_cache_status(),
+    }
 
 
 def build_group_state(groups: Dict[str, List[str]]) -> Dict[str, dict]:

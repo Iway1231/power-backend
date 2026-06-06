@@ -88,6 +88,34 @@ def clear_loe_cache() -> None:
     _LOE_CACHE.clear()
 
 
+def get_loe_cache_status(now: Optional[float] = None) -> dict:
+    now = time.time() if now is None else now
+    entries = []
+    expired_count = 0
+
+    for key, (cached_at, data) in _LOE_CACHE.items():
+        age_seconds = max(0, int(now - cached_at))
+        expires_in_seconds = max(0, int(LOE_CACHE_TTL_SECONDS - age_seconds))
+        if expires_in_seconds == 0 and age_seconds > LOE_CACHE_TTL_SECONDS:
+            expired_count += 1
+
+        path, params = key
+        entries.append({
+            "path": path,
+            "params": dict(params),
+            "age_seconds": age_seconds,
+            "expires_in_seconds": expires_in_seconds,
+            "items": len(data.get("hydra:member", [])) if isinstance(data, dict) else None,
+        })
+
+    return {
+        "ttl_seconds": LOE_CACHE_TTL_SECONDS,
+        "entries_count": len(_LOE_CACHE),
+        "expired_entries_count": expired_count,
+        "entries": entries,
+    }
+
+
 async def lookup_loe_address(
     city_name: str,
     street_name: str,
