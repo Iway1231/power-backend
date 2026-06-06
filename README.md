@@ -29,6 +29,15 @@ Main endpoint:
 GET /status
 ```
 
+Lvivoblenergo address lookup endpoints for app dropdowns:
+
+```http
+GET /loe/cities
+GET /loe/streets?city=Шкло
+GET /loe/buildings?city=Шкло&street=1-го%20Травня
+GET /loe/lookup?city=Шкло&street=1-го%20Травня&building=1
+```
+
 Example group schedule response:
 
 ```json
