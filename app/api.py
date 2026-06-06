@@ -145,6 +145,43 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
     return latest_end >= now
 
 
+def is_schedule_interval_active(date: Optional[str], interval: str, now: Optional[datetime] = None) -> bool:
+    if not date:
+        return True
+
+    try:
+        to_time = interval.split("-", 1)[1]
+        end_at = datetime.fromisoformat(f"{date}T{to_time}:00")
+    except (IndexError, ValueError):
+        return True
+
+    now = now or datetime.now()
+    return end_at >= now
+
+
+def active_schedule_intervals(date: Optional[str], intervals: List[str], now: Optional[datetime] = None) -> List[str]:
+    return [
+        interval
+        for interval in intervals
+        if is_schedule_interval_active(date, interval, now=now)
+    ]
+
+
+def is_group_schedule_active(parsed: dict, now: Optional[datetime] = None) -> bool:
+    if parsed.get("type") != "GROUP_SCHEDULE":
+        return True
+
+    groups = parsed.get("groups") or {}
+    all_outages = []
+    for group_status in groups.values():
+        all_outages.extend(group_status.get("outages") or [])
+
+    if not all_outages:
+        return True
+
+    return bool(active_schedule_intervals(parsed.get("date"), all_outages, now=now))
+
+
 def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]:
     if ocr.get("type") == "NO_OUTAGES":
         date = merge_date(ocr.get("date"), post_date)
@@ -175,6 +212,69 @@ def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]
     }
 
 
+def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] = None) -> dict:
+    if group not in GROUP_ORDER:
+        return {
+            "operator": "naftogaz",
+            "group": group,
+            "has_outage": None,
+            "message": "Невідома група Нафтогазу",
+            "source": status,
+        }
+
+    if status.get("type") == "GROUP_SCHEDULE":
+        group_status = (status.get("groups") or {}).get(group, {})
+        outages = active_schedule_intervals(status.get("date"), group_status.get("outages") or [], now=now)
+        has_outage = bool(outages)
+        return {
+            "operator": "naftogaz",
+            "group": group,
+            "has_outage": has_outage,
+            "status": "OFF" if has_outage else "ON",
+            "outages": outages,
+            "message": "Є відключення" if has_outage else "Відключень не заплановано",
+            "date": status.get("date"),
+            "source_type": status.get("type"),
+        }
+
+    if status.get("type") == "PLANNED_OUTAGE":
+        matching_intervals = []
+        for interval in status.get("intervals") or []:
+            naftogaz = interval.get("naftogaz") or {}
+            if naftogaz.get("group") == group:
+                matching_intervals.append(interval)
+                continue
+
+            for settlement in interval.get("settlements") or []:
+                settlement_naftogaz = settlement.get("naftogaz") or {}
+                if settlement_naftogaz.get("group") == group:
+                    matching_intervals.append(interval)
+                    break
+
+        has_outage = bool(matching_intervals)
+        return {
+            "operator": "naftogaz",
+            "group": group,
+            "has_outage": has_outage,
+            "status": "OFF" if has_outage else "ON",
+            "intervals": matching_intervals,
+            "message": "Є планове відключення" if has_outage else "Для цієї групи планового відключення не знайдено",
+            "date": status.get("date"),
+            "source_type": status.get("type"),
+        }
+
+    return {
+        "operator": "naftogaz",
+        "group": group,
+        "has_outage": False,
+        "status": "ON",
+        "outages": [],
+        "message": status.get("message") or "Відключень не заплановано",
+        "date": status.get("date"),
+        "source_type": status.get("type"),
+    }
+
+
 @router.get("/status", response_model=PowerStatus)
 async def get_power_status():
     posts = await fetch_latest_posts(limit=20)
@@ -198,6 +298,8 @@ async def get_power_status():
             parsed_image = build_status_from_ocr(ocr, post.get("published_at"))
             if not parsed_image:
                 continue
+            if not is_group_schedule_active(parsed_image):
+                continue
 
             return save_status(parsed_image)
 
@@ -213,6 +315,27 @@ async def get_power_status():
         updatedAt=datetime.now().isoformat(),
         confidence=1.0,
     )
+
+
+@router.get("/my-status")
+async def get_my_status(operator: str, group: Optional[str] = None):
+    normalized_operator = operator.lower().strip()
+    status = (await get_power_status()).dict()
+
+    if normalized_operator in ("naftogaz", "нафтогаз"):
+        if not group:
+            return {
+                "operator": "naftogaz",
+                "has_outage": None,
+                "message": "Для Нафтогазу потрібно передати group",
+            }
+        return build_my_naftogaz_status(status, group)
+
+    return {
+        "operator": operator,
+        "has_outage": None,
+        "message": "Поки підтримується тільки operator=naftogaz",
+    }
 
 
 def save_status(parsed: dict) -> PowerStatus:
