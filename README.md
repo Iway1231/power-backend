@@ -135,5 +135,21 @@ pytest tests/test_no_magic_restore.py tests/test_planned_outage_text.py tests/te
 - `app/ocr.py` handles schedule image OCR.
 - `app/parser.py` handles text post parsing.
 - `app/group_directory.py` maps known addresses and villages to Naftogaz outage groups.
-- Lvivoblenergo groups must stay separate from Naftogaz groups. Use a separate `loe` object for `gpv`, `gav`, and `sgav` data when that source is integrated.
+- `app/loe_api.py` normalizes Lvivoblenergo account data from `power-api.loe.lviv.ua`.
+- Lvivoblenergo groups stay separate from Naftogaz groups. Use the `loe` object for `gpv`, `gav`, `sgav`, `achr`, and `gvsp` data.
+
+Example Lvivoblenergo data:
+
+```json
+{
+  "building": "2-А",
+  "loe": {
+    "gpv": "2.2",
+    "gav": "6",
+    "sgav": null,
+    "achr": "4 (48.8Гц)",
+    "gvsp": null
+  }
+}
+```
 - `app/api.py` combines Telegram fetching, OCR parsing, text parsing, and the `/status` response.
