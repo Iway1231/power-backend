@@ -1,4 +1,4 @@
-from app.api import get_cache_status, get_health
+from app.api import get_app_config, get_cache_status, get_health
 from app.loe_api import clear_loe_cache, get_loe_cache_status, set_cached_loe_collection
 
 
@@ -41,3 +41,18 @@ def test_cache_status_endpoint():
     clear_loe_cache()
 
     assert get_cache_status()["loe"]["entries_count"] == 0
+
+
+def test_app_config_endpoint():
+    result = get_app_config()
+
+    assert result["app"] == {
+        "name": "Power Monitor",
+        "api_version": "1",
+    }
+    assert result["operators"][0]["id"] == "naftogaz"
+    assert result["operators"][1]["id"] == "loe"
+    assert result["endpoints"]["personal_status"] == "/my-status"
+    assert result["endpoints"]["naftogaz_groups"] == "/naftogaz/groups"
+    assert result["endpoints"]["loe_cities"] == "/loe/cities"
+    assert result["cache"]["loe_ttl_seconds"] == 300

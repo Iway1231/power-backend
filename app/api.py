@@ -12,6 +12,7 @@ from app.telegram_html import fetch_latest_posts
 from app.image_loader import download_image
 from app.group_directory import list_naftogaz_addresses, list_naftogaz_groups
 from app.loe_api import (
+    LOE_CACHE_TTL_SECONDS,
     available_buildings,
     fetch_loe_accounts,
     fetch_loe_cities,
@@ -132,6 +133,31 @@ def get_health():
 def get_cache_status():
     return {
         "loe": get_loe_cache_status(),
+    }
+
+
+@router.get("/app/config")
+def get_app_config():
+    return {
+        "app": {
+            "name": "Power Monitor",
+            "api_version": "1",
+        },
+        "operators": get_operators(),
+        "endpoints": {
+            "operators": "/operators",
+            "personal_status": "/my-status",
+            "naftogaz_groups": "/naftogaz/groups",
+            "naftogaz_addresses": "/naftogaz/addresses",
+            "loe_cities": "/loe/cities",
+            "loe_streets": "/loe/streets",
+            "loe_buildings": "/loe/buildings",
+            "loe_lookup": "/loe/lookup",
+            "health": "/health",
+        },
+        "cache": {
+            "loe_ttl_seconds": LOE_CACHE_TTL_SECONDS,
+        },
     }
 
 
