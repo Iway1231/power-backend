@@ -94,6 +94,160 @@ Example planned outage response:
 }
 ```
 
+## Android App Flow
+
+Use this sequence when building the Android app.
+
+### 1. Load Operators
+
+```http
+GET /operators
+```
+
+Example:
+
+```json
+[
+  {
+    "id": "naftogaz",
+    "name": "Нафтогаз Тепло",
+    "status_url": "/my-status?operator=naftogaz&group={group}",
+    "selection": "group"
+  },
+  {
+    "id": "loe",
+    "name": "Львівобленерго",
+    "status_url": "/my-status?operator=loe&city={city}&street={street}&building={building}",
+    "selection": "address"
+  }
+]
+```
+
+If `selection` is `group`, show Naftogaz groups. If `selection` is `address`, show city, street, and building dropdowns.
+
+### 2. Naftogaz User Setup
+
+Load available Naftogaz groups and their address hints:
+
+```http
+GET /naftogaz/groups
+```
+
+Example group item:
+
+```json
+{
+  "id": "2.1",
+  "name": "Група 2.1",
+  "addresses": [
+    {
+      "group": "2.1",
+      "type": "street",
+      "city": "Новояворівськ",
+      "name": "Січових Стрільців",
+      "buildings": ["1", "2", "4", "6"]
+    }
+  ]
+}
+```
+
+Save the selected group locally in the Android app.
+
+Check personal status:
+
+```http
+GET /my-status?operator=naftogaz&group=2.1
+```
+
+Example:
+
+```json
+{
+  "operator": "naftogaz",
+  "group": "2.1",
+  "has_outage": false,
+  "status": "ON",
+  "title": "Світло має бути",
+  "subtitle": "Для групи 2.1 відключень не заплановано",
+  "details": [
+    {"label": "Група", "value": "2.1"},
+    {"label": "Дата", "value": "2026-06-07"},
+    {"label": "Інтервали", "value": []}
+  ]
+}
+```
+
+### 3. Lvivoblenergo User Setup
+
+Load cities:
+
+```http
+GET /loe/cities
+```
+
+Load streets after city selection:
+
+```http
+GET /loe/streets?city=Шкло
+```
+
+Load buildings after street selection:
+
+```http
+GET /loe/buildings?city=Шкло&street=1-го%20Травня
+```
+
+Save `city`, `street`, and `building` locally in the Android app.
+
+Check personal status:
+
+```http
+GET /my-status?operator=loe&city=Шкло&street=1-го%20Травня&building=1
+```
+
+Example:
+
+```json
+{
+  "operator": "loe",
+  "city": "Шкло",
+  "street": "1-го травня",
+  "building": "1",
+  "has_outage": false,
+  "status": "UNKNOWN",
+  "title": "Групи адреси отримано",
+  "subtitle": "ГПВ 2.2, ГАВ 6, АЧР 4 (48.8Гц)",
+  "details": [
+    {"label": "ГПВ", "value": "2.2"},
+    {"label": "ГАВ", "value": "6"},
+    {"label": "АЧР", "value": "4 (48.8Гц)"}
+  ],
+  "loe": {
+    "gpv": "2.2",
+    "gav": "6",
+    "sgav": null,
+    "achr": "4 (48.8Гц)",
+    "gvsp": null
+  }
+}
+```
+
+For Lvivoblenergo, `gpv`, `gav`, `sgav`, `achr`, and `gvsp` are address groups, not a full hourly outage schedule. The API uses `status: "UNKNOWN"` unless Lvivoblenergo returns an explicit `disconnection_task`.
+
+### 4. Service Checks
+
+Health check:
+
+```http
+GET /health
+```
+
+Lvivoblenergo cache status:
+
+```http
+GET /cache/status
+```
+
 ## Setup
 
 Create and activate a virtual environment:
