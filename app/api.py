@@ -148,6 +148,7 @@ def get_app_config():
         "operators": get_operators(),
         "endpoints": {
             "operators": f"{API_V1_PREFIX}/operators",
+            "app_bootstrap": f"{API_V1_PREFIX}/app/bootstrap",
             "personal_status": f"{API_V1_PREFIX}/my-status",
             "naftogaz_groups": f"{API_V1_PREFIX}/naftogaz/groups",
             "naftogaz_addresses": f"{API_V1_PREFIX}/naftogaz/addresses",
@@ -160,6 +161,14 @@ def get_app_config():
         "cache": {
             "loe_ttl_seconds": LOE_CACHE_TTL_SECONDS,
         },
+    }
+
+
+@router.get("/app/bootstrap")
+def get_app_bootstrap():
+    return {
+        "config": get_app_config(),
+        "naftogaz_groups": get_naftogaz_groups(),
     }
 
 

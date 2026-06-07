@@ -108,6 +108,14 @@ GET /api/v1/app/config
 
 This returns the API version, supported operators, endpoint paths, and cache settings. Android should call this once at startup and then use the returned `endpoints` values.
 
+If the app also needs Naftogaz groups immediately, use the bootstrap endpoint instead:
+
+```http
+GET /api/v1/app/bootstrap
+```
+
+It returns `config` plus `naftogaz_groups` in one response.
+
 ### 2. Load Operators
 
 ```http

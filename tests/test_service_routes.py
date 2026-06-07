@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.api import get_app_config, get_cache_status, get_health
+from app.api import get_app_bootstrap, get_app_config, get_cache_status, get_health
 from app.main import app
 from app.loe_api import clear_loe_cache, get_loe_cache_status, set_cached_loe_collection
 
@@ -58,6 +58,7 @@ def test_app_config_endpoint():
     }
     assert result["operators"][0]["id"] == "naftogaz"
     assert result["operators"][1]["id"] == "loe"
+    assert result["endpoints"]["app_bootstrap"] == "/api/v1/app/bootstrap"
     assert result["endpoints"]["personal_status"] == "/api/v1/my-status"
     assert result["endpoints"]["naftogaz_groups"] == "/api/v1/naftogaz/groups"
     assert result["endpoints"]["loe_cities"] == "/api/v1/loe/cities"
@@ -69,3 +70,19 @@ def test_api_v1_app_config_route():
 
     assert response.status_code == 200
     assert response.json()["endpoints"]["personal_status"] == "/api/v1/my-status"
+
+
+def test_app_bootstrap_endpoint():
+    result = get_app_bootstrap()
+
+    assert result["config"]["app"]["api_version"] == "1"
+    assert result["config"]["endpoints"]["app_bootstrap"] == "/api/v1/app/bootstrap"
+    assert result["naftogaz_groups"]
+    assert result["naftogaz_groups"][0]["id"] == "1.1"
+
+
+def test_api_v1_app_bootstrap_route():
+    response = client.get("/api/v1/app/bootstrap")
+
+    assert response.status_code == 200
+    assert response.json()["naftogaz_groups"][0]["id"] == "1.1"
