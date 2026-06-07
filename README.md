@@ -26,16 +26,18 @@ http://127.0.0.1:8000/docs
 Main endpoint:
 
 ```http
-GET /status
+GET /api/v1/status
 ```
+
+Legacy unversioned routes such as `/status` still work, but Android should prefer `/api/v1/...` routes.
 
 Lvivoblenergo address lookup endpoints for app dropdowns:
 
 ```http
-GET /loe/cities
-GET /loe/streets?city=Шкло
-GET /loe/buildings?city=Шкло&street=1-го%20Травня
-GET /loe/lookup?city=Шкло&street=1-го%20Травня&building=1
+GET /api/v1/loe/cities
+GET /api/v1/loe/streets?city=Шкло
+GET /api/v1/loe/buildings?city=Шкло&street=1-го%20Травня
+GET /api/v1/loe/lookup?city=Шкло&street=1-го%20Травня&building=1
 ```
 
 Example group schedule response:
@@ -98,10 +100,18 @@ Example planned outage response:
 
 Use this sequence when building the Android app.
 
-### 1. Load Operators
+### 1. Load App Config
 
 ```http
-GET /operators
+GET /api/v1/app/config
+```
+
+This returns the API version, supported operators, endpoint paths, and cache settings. Android should call this once at startup and then use the returned `endpoints` values.
+
+### 2. Load Operators
+
+```http
+GET /api/v1/operators
 ```
 
 Example:
@@ -111,13 +121,13 @@ Example:
   {
     "id": "naftogaz",
     "name": "Нафтогаз Тепло",
-    "status_url": "/my-status?operator=naftogaz&group={group}",
+    "status_url": "/api/v1/my-status?operator=naftogaz&group={group}",
     "selection": "group"
   },
   {
     "id": "loe",
     "name": "Львівобленерго",
-    "status_url": "/my-status?operator=loe&city={city}&street={street}&building={building}",
+    "status_url": "/api/v1/my-status?operator=loe&city={city}&street={street}&building={building}",
     "selection": "address"
   }
 ]
@@ -125,12 +135,12 @@ Example:
 
 If `selection` is `group`, show Naftogaz groups. If `selection` is `address`, show city, street, and building dropdowns.
 
-### 2. Naftogaz User Setup
+### 3. Naftogaz User Setup
 
 Load available Naftogaz groups and their address hints:
 
 ```http
-GET /naftogaz/groups
+GET /api/v1/naftogaz/groups
 ```
 
 Example group item:
@@ -156,7 +166,7 @@ Save the selected group locally in the Android app.
 Check personal status:
 
 ```http
-GET /my-status?operator=naftogaz&group=2.1
+GET /api/v1/my-status?operator=naftogaz&group=2.1
 ```
 
 Example:
@@ -177,24 +187,24 @@ Example:
 }
 ```
 
-### 3. Lvivoblenergo User Setup
+### 4. Lvivoblenergo User Setup
 
 Load cities:
 
 ```http
-GET /loe/cities
+GET /api/v1/loe/cities
 ```
 
 Load streets after city selection:
 
 ```http
-GET /loe/streets?city=Шкло
+GET /api/v1/loe/streets?city=Шкло
 ```
 
 Load buildings after street selection:
 
 ```http
-GET /loe/buildings?city=Шкло&street=1-го%20Травня
+GET /api/v1/loe/buildings?city=Шкло&street=1-го%20Травня
 ```
 
 Save `city`, `street`, and `building` locally in the Android app.
@@ -202,7 +212,7 @@ Save `city`, `street`, and `building` locally in the Android app.
 Check personal status:
 
 ```http
-GET /my-status?operator=loe&city=Шкло&street=1-го%20Травня&building=1
+GET /api/v1/my-status?operator=loe&city=Шкло&street=1-го%20Травня&building=1
 ```
 
 Example:
@@ -234,18 +244,18 @@ Example:
 
 For Lvivoblenergo, `gpv`, `gav`, `sgav`, `achr`, and `gvsp` are address groups, not a full hourly outage schedule. The API uses `status: "UNKNOWN"` unless Lvivoblenergo returns an explicit `disconnection_task`.
 
-### 4. Service Checks
+### 5. Service Checks
 
 Health check:
 
 ```http
-GET /health
+GET /api/v1/health
 ```
 
 Lvivoblenergo cache status:
 
 ```http
-GET /cache/status
+GET /api/v1/cache/status
 ```
 
 ## Setup
