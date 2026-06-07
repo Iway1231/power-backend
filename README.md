@@ -273,6 +273,24 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Optional local configuration:
+
+```powershell
+copy .env.example .env
+```
+
+Supported environment variables:
+
+```text
+CHANNEL_URL=https://t.me/s/nya_merezhi
+CITY_ID=novoyavorivsk
+CITY_NAME=Новояворівськ
+REGION=Львівська область
+OPERATOR=Нафтогаз Тепло
+TIMEZONE=Europe/Kyiv
+LOE_CACHE_TTL_SECONDS=300
+```
+
 Install Tesseract OCR separately and make sure the `tesseract` executable is available in `PATH`.
 
 The OCR logic uses Ukrainian and English trained data:

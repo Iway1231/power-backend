@@ -1,20 +1,20 @@
-﻿import httpx
+import httpx
 from bs4 import BeautifulSoup
 
-CHANNEL_URL = "https://t.me/s/nya_merezhi"
+from app import config
 
 
 async def fetch_latest_posts(limit: int = 20) -> list[dict]:
-    print("🔗 FETCH HTML:", CHANNEL_URL)
+    print("FETCH HTML:", config.CHANNEL_URL)
 
     async with httpx.AsyncClient() as client:
-        r = await client.get(CHANNEL_URL)
-        r.raise_for_status()
+        response = await client.get(config.CHANNEL_URL)
+        response.raise_for_status()
 
-    soup = BeautifulSoup(r.text, "lxml")
+    soup = BeautifulSoup(response.text, "lxml")
 
     messages = soup.select("div.tgme_widget_message")
-    print(f"📦 FOUND POSTS: {len(messages)}")
+    print(f"FOUND POSTS: {len(messages)}")
 
     posts = []
 
@@ -29,13 +29,13 @@ async def fetch_latest_posts(limit: int = 20) -> list[dict]:
             else None
         )
 
-        print(f"\n🧾 POST #{idx}")
-        print("📩 TEXT:", text[:200] or "—")
-        print("🖼 IMAGE:", image)
+        print(f"POST #{idx}")
+        print("TEXT:", text[:200] or "-")
+        print("IMAGE:", image)
 
         posts.append({
             "text": text,
-            "image": image
+            "image": image,
         })
 
     return posts
