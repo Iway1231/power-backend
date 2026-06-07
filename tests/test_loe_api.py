@@ -1,11 +1,16 @@
+import httpx
+import pytest
+
 from app.loe_api import (
     available_buildings,
     clean_loe_value,
     clear_loe_cache,
     common_loe_groups,
+    fetch_loe_collection,
     find_loe_account,
     find_named_item,
     get_cached_loe_collection,
+    get_stale_loe_collection,
     parse_loe_account,
     set_cached_loe_collection,
 )
@@ -109,3 +114,40 @@ def test_loe_cache_expires(monkeypatch):
 
     assert get_cached_loe_collection("pw_cities", params, now=399) is not None
     assert get_cached_loe_collection("pw_cities", params, now=401) is None
+    assert get_stale_loe_collection("pw_cities", params) == {"hydra:member": []}
+
+
+class FailingAsyncClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, *args, **kwargs):
+        raise httpx.ConnectError("Lvivoblenergo is unavailable")
+
+
+@pytest.mark.asyncio
+async def test_loe_request_uses_stale_cache_on_http_error(monkeypatch):
+    clear_loe_cache()
+    params = {"pagination": "false"}
+    stale = {"hydra:member": [{"id": 1053, "name": "Шкло"}]}
+    set_cached_loe_collection("pw_cities", params, stale, now=0)
+    monkeypatch.setattr("app.loe_api.httpx.AsyncClient", FailingAsyncClient)
+
+    result = await fetch_loe_collection("pw_cities", params)
+
+    assert result == stale
+
+
+@pytest.mark.asyncio
+async def test_loe_request_raises_without_cache(monkeypatch):
+    clear_loe_cache()
+    monkeypatch.setattr("app.loe_api.httpx.AsyncClient", FailingAsyncClient)
+
+    with pytest.raises(httpx.ConnectError):
+        await fetch_loe_collection("pw_cities", {"pagination": "false"})

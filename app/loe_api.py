@@ -51,12 +51,18 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://poweron.loe.lviv.ua/",
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(f"{BASE_URL}/{path}", params=params, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        set_cached_loe_collection(path, params, data)
-        return data
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(f"{BASE_URL}/{path}", params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            set_cached_loe_collection(path, params, data)
+            return data
+    except httpx.HTTPError:
+        stale = get_stale_loe_collection(path, params)
+        if stale is not None:
+            return stale
+        raise
 
 
 def get_loe_cache_key(path: str, params: dict) -> tuple:
@@ -72,9 +78,17 @@ def get_cached_loe_collection(path: str, params: dict, now: Optional[float] = No
     cached_at, data = cached
     now = time.time() if now is None else now
     if now - cached_at > LOE_CACHE_TTL_SECONDS:
-        _LOE_CACHE.pop(key, None)
         return None
 
+    return copy.deepcopy(data)
+
+
+def get_stale_loe_collection(path: str, params: dict) -> Optional[dict]:
+    cached = _LOE_CACHE.get(get_loe_cache_key(path, params))
+    if not cached:
+        return None
+
+    _, data = cached
     return copy.deepcopy(data)
 
 
