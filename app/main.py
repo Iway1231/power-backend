@@ -1,5 +1,5 @@
 ﻿from fastapi import FastAPI
-from app.api import router
+from app.api import API_V1_PREFIX, router
 
 print("MAIN.PY LOADED")
 
@@ -13,9 +13,11 @@ app = FastAPI(
 def root():
     return {
         "message": "Power Schedule API is running",
-        "status_url": "/status",
+        "status_url": f"{API_V1_PREFIX}/status",
+        "app_config_url": f"{API_V1_PREFIX}/app/config",
         "docs_url": "/docs",
     }
 
 
 app.include_router(router)
+app.include_router(router, prefix=API_V1_PREFIX)

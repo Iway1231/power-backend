@@ -31,6 +31,8 @@ FALLBACK_FILE = "last_status.json"
 HISTORY_DIR = "history"
 os.makedirs(HISTORY_DIR, exist_ok=True)
 
+API_V1_PREFIX = "/api/v1"
+
 GROUP_ORDER = [
     "1.1", "1.2",
     "2.1", "2.2",
@@ -103,13 +105,13 @@ def get_operators():
         {
             "id": "naftogaz",
             "name": "Нафтогаз Тепло",
-            "status_url": "/my-status?operator=naftogaz&group={group}",
+            "status_url": f"{API_V1_PREFIX}/my-status?operator=naftogaz&group={{group}}",
             "selection": "group",
         },
         {
             "id": "loe",
             "name": "Львівобленерго",
-            "status_url": "/my-status?operator=loe&city={city}&street={street}&building={building}",
+            "status_url": f"{API_V1_PREFIX}/my-status?operator=loe&city={{city}}&street={{street}}&building={{building}}",
             "selection": "address",
         },
     ]
@@ -145,15 +147,15 @@ def get_app_config():
         },
         "operators": get_operators(),
         "endpoints": {
-            "operators": "/operators",
-            "personal_status": "/my-status",
-            "naftogaz_groups": "/naftogaz/groups",
-            "naftogaz_addresses": "/naftogaz/addresses",
-            "loe_cities": "/loe/cities",
-            "loe_streets": "/loe/streets",
-            "loe_buildings": "/loe/buildings",
-            "loe_lookup": "/loe/lookup",
-            "health": "/health",
+            "operators": f"{API_V1_PREFIX}/operators",
+            "personal_status": f"{API_V1_PREFIX}/my-status",
+            "naftogaz_groups": f"{API_V1_PREFIX}/naftogaz/groups",
+            "naftogaz_addresses": f"{API_V1_PREFIX}/naftogaz/addresses",
+            "loe_cities": f"{API_V1_PREFIX}/loe/cities",
+            "loe_streets": f"{API_V1_PREFIX}/loe/streets",
+            "loe_buildings": f"{API_V1_PREFIX}/loe/buildings",
+            "loe_lookup": f"{API_V1_PREFIX}/loe/lookup",
+            "health": f"{API_V1_PREFIX}/health",
         },
         "cache": {
             "loe_ttl_seconds": LOE_CACHE_TTL_SECONDS,

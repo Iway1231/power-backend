@@ -6,13 +6,13 @@ def test_get_operators():
         {
             "id": "naftogaz",
             "name": "Нафтогаз Тепло",
-            "status_url": "/my-status?operator=naftogaz&group={group}",
+            "status_url": "/api/v1/my-status?operator=naftogaz&group={group}",
             "selection": "group",
         },
         {
             "id": "loe",
             "name": "Львівобленерго",
-            "status_url": "/my-status?operator=loe&city={city}&street={street}&building={building}",
+            "status_url": "/api/v1/my-status?operator=loe&city={city}&street={street}&building={building}",
             "selection": "address",
         },
     ]

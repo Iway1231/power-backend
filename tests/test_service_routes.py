@@ -1,5 +1,11 @@
+from fastapi.testclient import TestClient
+
 from app.api import get_app_config, get_cache_status, get_health
+from app.main import app
 from app.loe_api import clear_loe_cache, get_loe_cache_status, set_cached_loe_collection
+
+
+client = TestClient(app)
 
 
 def test_health_endpoint():
@@ -52,7 +58,14 @@ def test_app_config_endpoint():
     }
     assert result["operators"][0]["id"] == "naftogaz"
     assert result["operators"][1]["id"] == "loe"
-    assert result["endpoints"]["personal_status"] == "/my-status"
-    assert result["endpoints"]["naftogaz_groups"] == "/naftogaz/groups"
-    assert result["endpoints"]["loe_cities"] == "/loe/cities"
+    assert result["endpoints"]["personal_status"] == "/api/v1/my-status"
+    assert result["endpoints"]["naftogaz_groups"] == "/api/v1/naftogaz/groups"
+    assert result["endpoints"]["loe_cities"] == "/api/v1/loe/cities"
     assert result["cache"]["loe_ttl_seconds"] == 300
+
+
+def test_api_v1_app_config_route():
+    response = client.get("/api/v1/app/config")
+
+    assert response.status_code == 200
+    assert response.json()["endpoints"]["personal_status"] == "/api/v1/my-status"
