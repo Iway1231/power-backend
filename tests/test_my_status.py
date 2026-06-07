@@ -205,3 +205,57 @@ async def test_get_my_status_for_loe(monkeypatch):
     assert result["operator"] == "loe"
     assert result["city"] == "Шкло"
     assert result["loe"] == {"gpv": "2.2"}
+
+
+@pytest.mark.asyncio
+async def test_get_my_status_missing_naftogaz_group(monkeypatch):
+    async def fake_get_power_status():
+        class FakeStatus:
+            def dict(self):
+                return {"type": "DAILY_STATUS"}
+
+        return FakeStatus()
+
+    monkeypatch.setattr("app.api.get_power_status", fake_get_power_status)
+
+    result = await get_my_status("naftogaz")
+
+    assert result == {
+        "operator": "naftogaz",
+        "has_outage": None,
+        "status": "UNKNOWN",
+        "title": "Не вибрано групу",
+        "subtitle": "Оберіть групу Нафтогазу для перевірки статусу",
+        "details": [],
+        "message": "Для Нафтогазу потрібно передати group",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_my_status_missing_loe_address():
+    result = await get_my_status("loe", city="Шкло")
+
+    assert result["operator"] == "loe"
+    assert result["has_outage"] is None
+    assert result["status"] == "UNKNOWN"
+    assert result["title"] == "Не вибрано адресу"
+    assert result["details"] == [
+        {"label": "Населений пункт", "value": "Шкло"},
+        {"label": "Вулиця", "value": None},
+        {"label": "Будинок", "value": None},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_my_status_unknown_operator():
+    result = await get_my_status("other")
+
+    assert result == {
+        "operator": "other",
+        "has_outage": None,
+        "status": "UNKNOWN",
+        "title": "Невідомий оператор",
+        "subtitle": "Оберіть Нафтогаз Тепло або Львівобленерго",
+        "details": [{"label": "Оператор", "value": "other"}],
+        "message": "Підтримуються operator=naftogaz і operator=loe",
+    }

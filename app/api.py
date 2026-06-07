@@ -333,6 +333,18 @@ def build_loe_details(loe: Optional[dict]) -> List[dict]:
     ]
 
 
+def build_personal_status_error(operator: str, message: str, title: str, subtitle: str, details: Optional[List[dict]] = None) -> dict:
+    return {
+        "operator": operator,
+        "has_outage": None,
+        "status": "UNKNOWN",
+        "title": title,
+        "subtitle": subtitle,
+        "details": details or [],
+        "message": message,
+    }
+
+
 def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] = None) -> dict:
     if group not in GROUP_ORDER:
         return {
@@ -516,29 +528,38 @@ async def get_my_status(
     if normalized_operator in ("naftogaz", "нафтогаз"):
         status = (await get_power_status()).dict()
         if not group:
-            return {
-                "operator": "naftogaz",
-                "has_outage": None,
-                "message": "Для Нафтогазу потрібно передати group",
-            }
+            return build_personal_status_error(
+                "naftogaz",
+                "Для Нафтогазу потрібно передати group",
+                "Не вибрано групу",
+                "Оберіть групу Нафтогазу для перевірки статусу",
+            )
         return build_my_naftogaz_status(status, group)
 
     if normalized_operator in ("loe", "львівобленерго", "lvivoblenergo"):
         if not city or not street or not building:
-            return {
-                "operator": "loe",
-                "has_outage": None,
-                "message": "Для Львівобленерго потрібно передати city, street і building",
-            }
+            return build_personal_status_error(
+                "loe",
+                "Для Львівобленерго потрібно передати city, street і building",
+                "Не вибрано адресу",
+                "Оберіть населений пункт, вулицю і будинок",
+                [
+                    build_detail("Населений пункт", city),
+                    build_detail("Вулиця", street),
+                    build_detail("Будинок", building),
+                ],
+            )
 
         lookup = await lookup_loe_address(city, street, building, debug=True)
         return build_my_loe_status(lookup)
 
-    return {
-        "operator": operator,
-        "has_outage": None,
-        "message": "Підтримуються operator=naftogaz і operator=loe",
-    }
+    return build_personal_status_error(
+        operator,
+        "Підтримуються operator=naftogaz і operator=loe",
+        "Невідомий оператор",
+        "Оберіть Нафтогаз Тепло або Львівобленерго",
+        [build_detail("Оператор", operator)],
+    )
 
 
 def save_status(parsed: dict) -> PowerStatus:
