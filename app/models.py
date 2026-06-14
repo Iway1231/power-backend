@@ -1,37 +1,20 @@
-﻿# app/models.py
+from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel
-from typing import Dict, List, Optional, Literal
+from pydantic import BaseModel, Field
 
-
-# ==================================================
-# GROUP SCHEDULE (🔥 БЕЗ `on`)
-# ==================================================
 
 class GroupSchedule(BaseModel):
     status: Literal["ON", "OFF"]
-    outages: List[str]
+    outages: List[str] = Field(default_factory=list)
 
-
-# ==================================================
-# MAIN RESPONSE MODEL
-# ==================================================
 
 class PowerStatus(BaseModel):
     city: str
     operator: str
-
     type: str
     message: Optional[str] = None
-
-    # для текстових статусів
     intervals: Optional[List[dict]] = None
-
-    # 🔥 ГОЛОВНЕ — groups -> GroupSchedule
     groups: Optional[Dict[str, GroupSchedule]] = None
-
     date: Optional[str] = None
     updatedAt: Optional[str] = None
-
-    # 🔒 ЗАВЖДИ float
-    confidence: float = 1.0
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)

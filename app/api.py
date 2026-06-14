@@ -6,9 +6,9 @@ import os
 import tempfile
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Annotated, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app import config
 from app.config import GROUP_ORDER
@@ -34,9 +34,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-FALLBACK_FILE = "last_status.json"
-HISTORY_DIR = "history"
-os.makedirs(HISTORY_DIR, exist_ok=True)
+config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+FALLBACK_FILE = config.DATA_DIR / "last_status.json"
+HISTORY_DIR = config.DATA_DIR / "history"
+HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 API_V1_PREFIX = "/api/v1"
 
@@ -44,14 +45,16 @@ _status_cache: Optional[dict] = None
 _status_cache_time: float = 0
 
 
-@router.get("/loe/cities")
+@router.get("/loe/cities", tags=["addresses"])
 async def get_loe_cities():
     cities = await fetch_loe_cities()
     return item_names(cities)
 
 
-@router.get("/loe/streets")
-async def get_loe_streets(city: str):
+@router.get("/loe/streets", tags=["addresses"])
+async def get_loe_streets(
+    city: Annotated[str, Query(min_length=1, max_length=120)],
+):
     cities = await fetch_loe_cities()
     city_item = find_named_item(cities, city)
     if not city_item:
@@ -65,8 +68,11 @@ async def get_loe_streets(city: str):
     return item_names(streets)
 
 
-@router.get("/loe/buildings")
-async def get_loe_buildings(city: str, street: str):
+@router.get("/loe/buildings", tags=["addresses"])
+async def get_loe_buildings(
+    city: Annotated[str, Query(min_length=1, max_length=120)],
+    street: Annotated[str, Query(min_length=1, max_length=160)],
+):
     cities = await fetch_loe_cities()
     city_item = find_named_item(cities, city)
     if not city_item:
@@ -90,17 +96,23 @@ async def get_loe_buildings(city: str, street: str):
     return available_buildings(accounts)
 
 
-@router.get("/loe/lookup")
-async def get_loe_lookup(city: str, street: str, building: str):
+@router.get("/loe/lookup", tags=["addresses"])
+async def get_loe_lookup(
+    city: Annotated[str, Query(min_length=1, max_length=120)],
+    street: Annotated[str, Query(min_length=1, max_length=160)],
+    building: Annotated[str, Query(min_length=1, max_length=40)],
+):
     return await lookup_loe_address(city, street, building, debug=True)
 
 
-@router.get("/naftogaz/addresses")
-def get_naftogaz_addresses(group: Optional[str] = None):
+@router.get("/naftogaz/addresses", tags=["addresses"])
+def get_naftogaz_addresses(
+    group: Annotated[Optional[str], Query(pattern=r"^[1-6]\.[12]$")] = None,
+):
     return list_naftogaz_addresses(group)
 
 
-@router.get("/operators")
+@router.get("/operators", tags=["service"])
 def get_operators():
     return [
         {
@@ -118,28 +130,30 @@ def get_operators():
     ]
 
 
-@router.get("/naftogaz/groups")
+@router.get("/naftogaz/groups", tags=["addresses"])
 def get_naftogaz_groups():
     return list_naftogaz_groups(GROUP_ORDER)
 
 
-@router.get("/health")
+@router.get("/health", tags=["service"])
 def get_health():
     return {
         "status": "ok",
         "service": "power-backend",
+        "version": config.SETTINGS.app_version,
+        "environment": config.SETTINGS.environment,
         "time": datetime.now().isoformat(),
     }
 
 
-@router.get("/cache/status")
+@router.get("/cache/status", tags=["service"])
 def get_cache_status():
     return {
         "loe": get_loe_cache_status(),
     }
 
 
-@router.get("/app/config")
+@router.get("/app/config", tags=["service"])
 def get_app_config():
     return {
         "app": {
@@ -165,7 +179,7 @@ def get_app_config():
     }
 
 
-@router.get("/app/bootstrap")
+@router.get("/app/bootstrap", tags=["service"])
 def get_app_bootstrap():
     return {
         "config": get_app_config(),
@@ -483,7 +497,7 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
     }
 
 
-@router.get("/status", response_model=PowerStatus)
+@router.get("/status", response_model=PowerStatus, tags=["outages"])
 async def get_power_status():
     global _status_cache, _status_cache_time
 
@@ -531,13 +545,13 @@ async def get_power_status():
     )
 
 
-@router.get("/my-status")
+@router.get("/my-status", tags=["outages"])
 async def get_my_status(
-    operator: str,
-    group: Optional[str] = None,
-    city: Optional[str] = None,
-    street: Optional[str] = None,
-    building: Optional[str] = None,
+    operator: Annotated[str, Query(min_length=2, max_length=40)],
+    group: Annotated[Optional[str], Query(max_length=10)] = None,
+    city: Annotated[Optional[str], Query(max_length=120)] = None,
+    street: Annotated[Optional[str], Query(max_length=160)] = None,
+    building: Annotated[Optional[str], Query(max_length=40)] = None,
 ):
     normalized_operator = operator.lower().strip()
 
@@ -597,7 +611,11 @@ def save_status(parsed: dict) -> PowerStatus:
     _status_cache_time = time.time()
 
     try:
-        fd, tmp_path = tempfile.mkstemp(dir=".", suffix=".json")
+        fd, tmp_path = tempfile.mkstemp(
+            dir=config.DATA_DIR,
+            prefix="status-",
+            suffix=".json",
+        )
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(status, f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, FALLBACK_FILE)

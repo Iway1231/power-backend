@@ -1,15 +1,15 @@
 import copy
-import os
 import re
 import time
 from typing import Any, Optional
 
 import httpx
 
+from app import config
 
 BASE_URL = "https://power-api.loe.lviv.ua/api"
 NOT_INCLUDED_TEXT = "Не входить"
-LOE_CACHE_TTL_SECONDS = int(os.getenv("LOE_CACHE_TTL_SECONDS", "300"))
+LOE_CACHE_TTL_SECONDS = config.LOE_CACHE_TTL_SECONDS
 _LOE_CACHE: dict[tuple, tuple[float, dict]] = {}
 
 
@@ -52,7 +52,9 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
         "Referer": "https://poweron.loe.lviv.ua/",
     }
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(
+            timeout=config.REQUEST_TIMEOUT_SECONDS,
+        ) as client:
             response = await client.get(f"{BASE_URL}/{path}", params=params, headers=headers)
             response.raise_for_status()
             data = response.json()

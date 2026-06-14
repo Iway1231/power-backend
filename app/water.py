@@ -1,4 +1,3 @@
-import os
 import re
 import logging
 from datetime import datetime
@@ -8,11 +7,9 @@ import httpx
 from bs4 import BeautifulSoup
 from fastapi import APIRouter
 
+from app import config
 
-WATER_CHANNEL_URL = os.getenv(
-    "WATER_CHANNEL_URL",
-    "https://t.me/s/vodocanal_nya",
-)
+WATER_CHANNEL_URL = config.WATER_CHANNEL_URL
 
 router = APIRouter(prefix="/water", tags=["water"])
 logger = logging.getLogger(__name__)
@@ -40,7 +37,11 @@ async def fetch_water_posts(limit: int = 20) -> list[dict]:
             "AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
         ),
     }
-    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+    async with httpx.AsyncClient(
+        timeout=config.REQUEST_TIMEOUT_SECONDS,
+        headers=headers,
+        follow_redirects=True,
+    ) as client:
         response = await client.get(WATER_CHANNEL_URL)
         response.raise_for_status()
 

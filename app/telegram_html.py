@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 async def fetch_latest_posts(limit: int = 20) -> list[dict]:
     logger.info("Fetching Telegram HTML: %s", config.CHANNEL_URL)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(
+        timeout=config.REQUEST_TIMEOUT_SECONDS,
+        follow_redirects=True,
+    ) as client:
         response = await client.get(config.CHANNEL_URL)
         response.raise_for_status()
 
