@@ -25,3 +25,14 @@ CITY_NAME = os.getenv("CITY_NAME", "Новояворівськ")
 REGION = os.getenv("REGION", "Львівська область")
 OPERATOR = os.getenv("OPERATOR", "Нафтогаз Тепло")
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Kyiv")
+
+STATUS_CACHE_TTL_SECONDS = int(os.getenv("STATUS_CACHE_TTL_SECONDS", "90"))
+
+GROUP_ORDER = [
+    "1.1", "1.2",
+    "2.1", "2.2",
+    "3.1", "3.2",
+    "4.1", "4.2",
+    "5.1", "5.2",
+    "6.1", "6.2",
+]

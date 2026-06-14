@@ -1,24 +1,26 @@
 ﻿# app/ocr.py
 
-import pytesseract
+import logging
+import os
+import re
+from pathlib import Path
+from typing import Dict, List, Optional
+
 import cv2
 import numpy as np
-import re
-import os
-from typing import Optional, Dict, List
+import pytesseract
 
-DEBUG = True
+from app.config import GROUP_ORDER
+
+logger = logging.getLogger(__name__)
+
+_LOCAL_TESSERACT = Path(__file__).resolve().parent.parent / "tesseract.exe"
+if _LOCAL_TESSERACT.exists():
+    pytesseract.pytesseract.tesseract_cmd = str(_LOCAL_TESSERACT)
+    os.environ.setdefault("TESSDATA_PREFIX", str(_LOCAL_TESSERACT.parent / "tessdata"))
+
 DEBUG_DIR = "debug"
 os.makedirs(DEBUG_DIR, exist_ok=True)
-
-GROUP_ORDER = [
-    "1.1", "1.2",
-    "2.1", "2.2",
-    "3.1", "3.2",
-    "4.1", "4.2",
-    "5.1", "5.2",
-    "6.1", "6.2",
-]
 
 ROWS = [
     ("1.1", "1.2"),
@@ -74,7 +76,7 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
         return {
             "groups": {},
             "date": None,
-            "confidence": 0.9,
+            "confidence": {"date": 0.0, "groups": 0.9},
             "type": "NO_OUTAGES",
         }
 
@@ -91,16 +93,21 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
         if intervals:
             groups[group] = intervals
 
-        if DEBUG:
-            print(f"[OCR] {group}: {intervals}")
-            print(f"[TXT] {text}")
+        logger.debug("[OCR] %s: %s", group, intervals)
+        logger.debug("[TXT] %s", text)
 
     groups = restore_rows(groups)
+
+    date_confidence = 1.0 if date else 0.0
+    groups_confidence = 0.9 if groups else 0.5
 
     return {
         "groups": groups,
         "date": date,
-        "confidence": 0.9 if date else 0.6,
+        "confidence": {
+            "date": date_confidence,
+            "groups": groups_confidence,
+        },
     }
 
 
@@ -196,7 +203,7 @@ def fix_time(h: str, m: str) -> Optional[str]:
 
         if 0 <= h <= 23 and m in (0, 59):
             return f"{h:02d}:{m:02d}"
-    except:
+    except (ValueError, TypeError):
         pass
     return None
 

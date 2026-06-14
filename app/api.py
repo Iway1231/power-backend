@@ -1,12 +1,17 @@
 ﻿# app/api.py
 
-from fastapi import APIRouter
-from datetime import datetime
 import json
+import logging
 import os
+import tempfile
+import time
+from datetime import datetime
 from typing import Dict, List, Optional
 
+from fastapi import APIRouter, HTTPException
+
 from app import config
+from app.config import GROUP_ORDER
 from app.models import PowerStatus
 from app.telegram_html import fetch_latest_posts
 from app.image_loader import download_image
@@ -25,6 +30,8 @@ from app.loe_api import (
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 FALLBACK_FILE = "last_status.json"
@@ -33,14 +40,8 @@ os.makedirs(HISTORY_DIR, exist_ok=True)
 
 API_V1_PREFIX = "/api/v1"
 
-GROUP_ORDER = [
-    "1.1", "1.2",
-    "2.1", "2.2",
-    "3.1", "3.2",
-    "4.1", "4.2",
-    "5.1", "5.2",
-    "6.1", "6.2",
-]
+_status_cache: Optional[dict] = None
+_status_cache_time: float = 0
 
 
 @router.get("/loe/cities")
@@ -54,11 +55,11 @@ async def get_loe_streets(city: str):
     cities = await fetch_loe_cities()
     city_item = find_named_item(cities, city)
     if not city_item:
-        return {
+        raise HTTPException(status_code=404, detail={
             "error": "city_not_found",
             "query": city,
             "available": item_names(cities),
-        }
+        })
 
     streets = await fetch_loe_streets(city_item["id"])
     return item_names(streets)
@@ -69,21 +70,21 @@ async def get_loe_buildings(city: str, street: str):
     cities = await fetch_loe_cities()
     city_item = find_named_item(cities, city)
     if not city_item:
-        return {
+        raise HTTPException(status_code=404, detail={
             "error": "city_not_found",
             "query": city,
             "available": item_names(cities),
-        }
+        })
 
     streets = await fetch_loe_streets(city_item["id"])
     street_item = find_named_item(streets, street)
     if not street_item:
-        return {
+        raise HTTPException(status_code=404, detail={
             "error": "street_not_found",
             "city": city,
             "query": street,
             "available": item_names(streets),
-        }
+        })
 
     accounts = await fetch_loe_accounts(city_item["id"], street_item["id"])
     return available_buildings(accounts)
@@ -259,6 +260,15 @@ def is_group_schedule_active(parsed: dict, now: Optional[datetime] = None) -> bo
     return bool(active_schedule_intervals(parsed.get("date"), all_outages, now=now))
 
 
+def _overall_confidence(conf) -> float:
+    if isinstance(conf, dict):
+        values = [v for v in conf.values() if isinstance(v, (int, float))]
+        return min(values) if values else 0.8
+    if isinstance(conf, (int, float)):
+        return float(conf)
+    return 0.8
+
+
 def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]:
     if ocr.get("type") == "NO_OUTAGES":
         date = merge_date(ocr.get("date"), post_date)
@@ -266,7 +276,7 @@ def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]
             "type": "DAILY_STATUS",
             "message": "Відключень не заплановано",
             "date": date,
-            "confidence": ocr.get("confidence", 0.9),
+            "confidence": _overall_confidence(ocr.get("confidence", 0.9)),
         }
 
     raw_groups = ocr.get("groups", {})
@@ -278,14 +288,14 @@ def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]
             "type": "DAILY_STATUS",
             "message": "Відключень не заплановано",
             "date": ocr["date"],
-            "confidence": ocr.get("confidence", 0.8),
+            "confidence": _overall_confidence(ocr.get("confidence", 0.8)),
         }
 
     return {
         "type": "GROUP_SCHEDULE",
         "groups": build_group_state(raw_groups),
         "date": merge_date(ocr.get("date"), post_date),
-        "confidence": ocr.get("confidence", 0.8),
+        "confidence": _overall_confidence(ocr.get("confidence", 0.8)),
     }
 
 
@@ -475,6 +485,12 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
 
 @router.get("/status", response_model=PowerStatus)
 async def get_power_status():
+    global _status_cache, _status_cache_time
+
+    now = time.time()
+    if _status_cache and (now - _status_cache_time) < config.STATUS_CACHE_TTL_SECONDS:
+        return PowerStatus(**_status_cache)
+
     posts = await fetch_latest_posts(limit=20)
 
     for post in reversed(posts):
@@ -502,7 +518,7 @@ async def get_power_status():
             return save_status(parsed_image)
 
         except Exception as e:
-            print("❌ OCR ERROR:", e)
+            logger.error("OCR error: %s", e, exc_info=True)
 
     return PowerStatus(
         city=config.CITY_NAME,
@@ -563,6 +579,8 @@ async def get_my_status(
 
 
 def save_status(parsed: dict) -> PowerStatus:
+    global _status_cache, _status_cache_time
+
     status = {
         "city": config.CITY_NAME,
         "operator": config.OPERATOR,
@@ -575,7 +593,15 @@ def save_status(parsed: dict) -> PowerStatus:
         "confidence": parsed.get("confidence", 1.0),
     }
 
-    with open(FALLBACK_FILE, "w", encoding="utf-8") as f:
-        json.dump(status, f, ensure_ascii=False, indent=2)
+    _status_cache = status
+    _status_cache_time = time.time()
+
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=".", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, FALLBACK_FILE)
+    except OSError:
+        logger.warning("Failed to persist status to %s", FALLBACK_FILE)
 
     return PowerStatus(**status)

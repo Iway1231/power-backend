@@ -1,14 +1,10 @@
-﻿import re
+﻿import logging
+import re
 from typing import Optional
 
 from app.group_directory import infer_groups_for_address, infer_settlements_for_address
 
-
-# =========================================================
-# DEBUG
-# =========================================================
-
-DEBUG = True
+logger = logging.getLogger(__name__)
 
 
 # =========================================================
@@ -86,10 +82,9 @@ def filter_valid_ranges(active_ranges: list[str]) -> list[str]:
 
     cleaned = sorted(r for r in active_ranges if r in valid)
 
-    if DEBUG:
-        removed = sorted(set(active_ranges) - set(cleaned))
-        if removed:
-            print("🧹 REMOVED OCR NOISE:", removed)
+    removed = sorted(set(active_ranges) - set(cleaned))
+    if removed:
+        logger.debug("Removed OCR noise: %s", removed)
 
     return cleaned
 

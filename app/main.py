@@ -1,8 +1,13 @@
-﻿from fastapi import FastAPI
+﻿import logging
+
+from fastapi import FastAPI
 from app.api import API_V1_PREFIX, router
 from app.water import router as water_router
 
-print("MAIN.PY LOADED")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 app = FastAPI(
     title="Power Schedule API",
