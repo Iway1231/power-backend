@@ -40,6 +40,16 @@ GET /api/v1/loe/buildings?city=Шкло&street=1-го%20Травня
 GET /api/v1/loe/lookup?city=Шкло&street=1-го%20Травня&building=1
 ```
 
+Novoyavorivskvodokanal current water outage:
+
+```http
+GET /api/v1/water/status
+```
+
+The water endpoint reads public posts from
+`https://t.me/vodocanal_nya`, extracts the outage date, start and
+restoration times, and affected locations. Expired notices are ignored.
+
 Example group schedule response:
 
 ```json
@@ -291,6 +301,7 @@ Supported environment variables:
 
 ```text
 CHANNEL_URL=https://t.me/s/nya_merezhi
+WATER_CHANNEL_URL=https://t.me/s/vodocanal_nya
 CITY_ID=novoyavorivsk
 CITY_NAME=Новояворівськ
 REGION=Львівська область

@@ -1,5 +1,6 @@
 ﻿from fastapi import FastAPI
 from app.api import API_V1_PREFIX, router
+from app.water import router as water_router
 
 print("MAIN.PY LOADED")
 
@@ -21,3 +22,5 @@ def root():
 
 app.include_router(router)
 app.include_router(router, prefix=API_V1_PREFIX)
+app.include_router(water_router)
+app.include_router(water_router, prefix=API_V1_PREFIX)
