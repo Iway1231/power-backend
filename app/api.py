@@ -1,4 +1,4 @@
-﻿# app/api.py
+# app/api.py
 
 import json
 import logging
@@ -12,23 +12,23 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app import config
 from app.config import GROUP_ORDER
-from app.models import PowerStatus
-from app.telegram_html import fetch_latest_posts
-from app.image_loader import download_image
 from app.group_directory import list_naftogaz_addresses, list_naftogaz_groups
+from app.image_loader import download_image
 from app.loe_api import (
     LOE_CACHE_TTL_SECONDS,
     available_buildings,
     fetch_loe_accounts,
     fetch_loe_cities,
     fetch_loe_streets,
-    get_loe_cache_status,
     find_named_item,
+    get_loe_cache_status,
     item_names,
     lookup_loe_address,
 )
+from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
+from app.telegram_html import fetch_latest_posts
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,14 @@ async def get_loe_streets(
     cities = await fetch_loe_cities()
     city_item = find_named_item(cities, city)
     if not city_item:
-        raise HTTPException(status_code=404, detail={
-            "error": "city_not_found",
-            "query": city,
-            "available": item_names(cities),
-        })
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "city_not_found",
+                "query": city,
+                "available": item_names(cities),
+            },
+        )
 
     streets = await fetch_loe_streets(city_item["id"])
     return item_names(streets)
@@ -76,21 +79,27 @@ async def get_loe_buildings(
     cities = await fetch_loe_cities()
     city_item = find_named_item(cities, city)
     if not city_item:
-        raise HTTPException(status_code=404, detail={
-            "error": "city_not_found",
-            "query": city,
-            "available": item_names(cities),
-        })
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "city_not_found",
+                "query": city,
+                "available": item_names(cities),
+            },
+        )
 
     streets = await fetch_loe_streets(city_item["id"])
     street_item = find_named_item(streets, street)
     if not street_item:
-        raise HTTPException(status_code=404, detail={
-            "error": "street_not_found",
-            "city": city,
-            "query": street,
-            "available": item_names(streets),
-        })
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "street_not_found",
+                "city": city,
+                "query": street,
+                "available": item_names(streets),
+            },
+        )
 
     accounts = await fetch_loe_accounts(city_item["id"], street_item["id"])
     return available_buildings(accounts)
@@ -237,7 +246,9 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
     return latest_end >= now
 
 
-def is_schedule_interval_active(date: Optional[str], interval: str, now: Optional[datetime] = None) -> bool:
+def is_schedule_interval_active(
+    date: Optional[str], interval: str, now: Optional[datetime] = None
+) -> bool:
     if not date:
         return True
 
@@ -251,11 +262,11 @@ def is_schedule_interval_active(date: Optional[str], interval: str, now: Optiona
     return end_at >= now
 
 
-def active_schedule_intervals(date: Optional[str], intervals: List[str], now: Optional[datetime] = None) -> List[str]:
+def active_schedule_intervals(
+    date: Optional[str], intervals: List[str], now: Optional[datetime] = None
+) -> List[str]:
     return [
-        interval
-        for interval in intervals
-        if is_schedule_interval_active(date, interval, now=now)
+        interval for interval in intervals if is_schedule_interval_active(date, interval, now=now)
     ]
 
 
@@ -331,11 +342,7 @@ def format_loe_subtitle(loe: Optional[dict]) -> str:
         "achr": "АЧР",
         "gvsp": "ГВСП",
     }
-    parts = [
-        f"{label} {loe[key]}"
-        for key, label in labels.items()
-        if loe.get(key)
-    ]
+    parts = [f"{label} {loe[key]}" for key, label in labels.items() if loe.get(key)]
     return ", ".join(parts) if parts else "Групи адреси не знайдено"
 
 
@@ -350,14 +357,12 @@ def build_loe_details(loe: Optional[dict]) -> List[dict]:
         "achr": "АЧР",
         "gvsp": "ГВСП",
     }
-    return [
-        build_detail(label, loe[key])
-        for key, label in labels.items()
-        if loe.get(key)
-    ]
+    return [build_detail(label, loe[key]) for key, label in labels.items() if loe.get(key)]
 
 
-def build_personal_status_error(operator: str, message: str, title: str, subtitle: str, details: Optional[List[dict]] = None) -> dict:
+def build_personal_status_error(
+    operator: str, message: str, title: str, subtitle: str, details: Optional[List[dict]] = None
+) -> dict:
     return {
         "operator": operator,
         "has_outage": None,
@@ -384,7 +389,9 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
 
     if status.get("type") == "GROUP_SCHEDULE":
         group_status = (status.get("groups") or {}).get(group, {})
-        outages = active_schedule_intervals(status.get("date"), group_status.get("outages") or [], now=now)
+        outages = active_schedule_intervals(
+            status.get("date"), group_status.get("outages") or [], now=now
+        )
         has_outage = bool(outages)
         return {
             "operator": "naftogaz",
@@ -393,7 +400,9 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
             "status": "OFF" if has_outage else "ON",
             "outages": outages,
             "title": "Зараз є відключення" if has_outage else "Світло має бути",
-            "subtitle": f"Група {group}: {', '.join(outages)}" if has_outage else f"Для групи {group} відключень не заплановано",
+            "subtitle": f"Група {group}: {', '.join(outages)}"
+            if has_outage
+            else f"Для групи {group} відключень не заплановано",
             "details": [
                 build_detail("Група", group),
                 build_detail("Дата", status.get("date")),
@@ -426,13 +435,17 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
             "status": "OFF" if has_outage else "ON",
             "intervals": matching_intervals,
             "title": "Є планове відключення" if has_outage else "Світло має бути",
-            "subtitle": f"Для групи {group} знайдено планове відключення" if has_outage else f"Для групи {group} планового відключення не знайдено",
+            "subtitle": f"Для групи {group} знайдено планове відключення"
+            if has_outage
+            else f"Для групи {group} планового відключення не знайдено",
             "details": [
                 build_detail("Група", group),
                 build_detail("Дата", status.get("date")),
                 build_detail("Інтервали", matching_intervals),
             ],
-            "message": "Є планове відключення" if has_outage else "Для цієї групи планового відключення не знайдено",
+            "message": "Є планове відключення"
+            if has_outage
+            else "Для цієї групи планового відключення не знайдено",
             "date": status.get("date"),
             "source_type": status.get("type"),
         }

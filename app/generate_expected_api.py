@@ -1,4 +1,4 @@
-﻿# app/generate_expected_api.py
+# app/generate_expected_api.py
 
 import json
 import os
@@ -17,12 +17,18 @@ OUT_DIR = "tests/expected_api"
 OUT = f"{OUT_DIR}/{DATE}.json"
 
 GROUP_ORDER = [
-    "1.1", "1.2",
-    "2.1", "2.2",
-    "3.1", "3.2",
-    "4.1", "4.2",
-    "5.1", "5.2",
-    "6.1", "6.2",
+    "1.1",
+    "1.2",
+    "2.1",
+    "2.2",
+    "3.1",
+    "3.2",
+    "4.1",
+    "4.2",
+    "5.1",
+    "5.2",
+    "6.1",
+    "6.2",
 ]
 
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -30,6 +36,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # =========================
 # HELPERS
 # =========================
+
 
 def restore_row_intervals(groups: dict) -> dict:
     """
@@ -64,10 +71,7 @@ def add_status(groups: dict) -> dict:
     result = {}
 
     for g, outages in groups.items():
-        result[g] = {
-            "status": "OFF" if outages else "ON",
-            "outages": outages
-        }
+        result[g] = {"status": "OFF" if outages else "ON", "outages": outages}
 
     return result
 
@@ -91,7 +95,7 @@ api_snapshot = {
     "message": "Графік погодинних відключень",
     "groups": groups,
     "date": DATE,
-    "generatedAt": datetime.now().isoformat()
+    "generatedAt": datetime.now().isoformat(),
 }
 
 with open(OUT, "w", encoding="utf-8") as f:

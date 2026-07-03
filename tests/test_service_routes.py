@@ -1,9 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.api import get_app_bootstrap, get_app_config, get_cache_status, get_health
-from app.main import app
 from app.loe_api import clear_loe_cache, get_loe_cache_status, set_cached_loe_collection
-
+from app.main import app
 
 client = TestClient(app)
 

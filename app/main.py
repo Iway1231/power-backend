@@ -14,7 +14,6 @@ from app.middleware import (
 )
 from app.water import router as water_router
 
-
 OPENAPI_TAGS = [
     {"name": "service", "description": "Service health and runtime metadata."},
     {"name": "outages", "description": "Electricity outage schedules and status."},
@@ -30,8 +29,7 @@ def create_app(settings: Settings = SETTINGS) -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description=(
-            "API for electricity and water outage information in the "
-            "Novoyavorivsk community."
+            "API for electricity and water outage information in the Novoyavorivsk community."
         ),
         contact={
             "name": "Power Backend maintainers",

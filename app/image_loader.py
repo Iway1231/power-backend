@@ -1,7 +1,9 @@
-﻿# app/image_loader.py
-import httpx
+# app/image_loader.py
 import os
 from uuid import uuid4
+
+import httpx
+
 
 async def download_image(url: str) -> str:
     os.makedirs("images", exist_ok=True)

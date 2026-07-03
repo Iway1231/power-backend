@@ -71,7 +71,9 @@ def get_loe_cache_key(path: str, params: dict) -> tuple:
     return path, tuple(sorted((key, str(value)) for key, value in params.items()))
 
 
-def get_cached_loe_collection(path: str, params: dict, now: Optional[float] = None) -> Optional[dict]:
+def get_cached_loe_collection(
+    path: str, params: dict, now: Optional[float] = None
+) -> Optional[dict]:
     key = get_loe_cache_key(path, params)
     cached = _LOE_CACHE.get(key)
     if not cached:
@@ -94,7 +96,9 @@ def get_stale_loe_collection(path: str, params: dict) -> Optional[dict]:
     return copy.deepcopy(data)
 
 
-def set_cached_loe_collection(path: str, params: dict, data: dict, now: Optional[float] = None) -> None:
+def set_cached_loe_collection(
+    path: str, params: dict, data: dict, now: Optional[float] = None
+) -> None:
     key = get_loe_cache_key(path, params)
     cached_at = time.time() if now is None else now
     _LOE_CACHE[key] = cached_at, copy.deepcopy(data)
@@ -116,13 +120,15 @@ def get_loe_cache_status(now: Optional[float] = None) -> dict:
             expired_count += 1
 
         path, params = key
-        entries.append({
-            "path": path,
-            "params": dict(params),
-            "age_seconds": age_seconds,
-            "expires_in_seconds": expires_in_seconds,
-            "items": len(data.get("hydra:member", [])) if isinstance(data, dict) else None,
-        })
+        entries.append(
+            {
+                "path": path,
+                "params": dict(params),
+                "age_seconds": age_seconds,
+                "expires_in_seconds": expires_in_seconds,
+                "items": len(data.get("hydra:member", [])) if isinstance(data, dict) else None,
+            }
+        )
 
     return {
         "ttl_seconds": LOE_CACHE_TTL_SECONDS,
@@ -182,11 +188,7 @@ async def lookup_loe_address(
 
 
 def item_names(items: list[dict]) -> list[str]:
-    return [
-        decode_mojibake(item.get("name"))
-        for item in items
-        if item.get("name")
-    ]
+    return [decode_mojibake(item.get("name")) for item in items if item.get("name")]
 
 
 def available_buildings(accounts: list[dict]) -> list[str]:
@@ -199,10 +201,7 @@ def available_buildings(accounts: list[dict]) -> list[str]:
 
 
 def common_loe_groups(accounts: list[dict]) -> Optional[dict]:
-    groups = [
-        parse_loe_account(account)["loe"]
-        for account in accounts
-    ]
+    groups = [parse_loe_account(account)["loe"] for account in accounts]
     if not groups:
         return None
 

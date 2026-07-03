@@ -40,10 +40,12 @@ async def fetch_latest_posts(limit: int = 20) -> list[dict]:
 
         logger.debug("Post: text=%s image=%s date=%s", text[:80] or "-", image, published_at)
 
-        posts.append({
-            "text": text,
-            "image": image,
-            "published_at": published_at,
-        })
+        posts.append(
+            {
+                "text": text,
+                "image": image,
+                "published_at": published_at,
+            }
+        )
 
     return posts

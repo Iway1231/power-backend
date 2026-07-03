@@ -1,7 +1,7 @@
 from datetime import datetime
 
-import pytest
 import httpx
+import pytest
 
 from app.water import (
     get_water_status,
@@ -66,13 +66,12 @@ def test_expired_water_outage_is_inactive():
 @pytest.mark.asyncio
 async def test_water_status_returns_active_post(monkeypatch):
     async def fake_fetch_water_posts(limit=20):
-        return [{
-            "text": (
-                "09.06.2026 р. з 10:00 до 17:00 буде тимчасово "
-                "припинено водопостачання."
-            ),
-            "published_at": "2026-06-09T09:00:00+03:00",
-        }]
+        return [
+            {
+                "text": ("09.06.2026 р. з 10:00 до 17:00 буде тимчасово припинено водопостачання."),
+                "published_at": "2026-06-09T09:00:00+03:00",
+            }
+        ]
 
     monkeypatch.setattr("app.water.fetch_water_posts", fake_fetch_water_posts)
     monkeypatch.setattr(

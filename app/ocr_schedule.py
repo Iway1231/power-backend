@@ -1,8 +1,8 @@
-﻿import cv2
-import pytesseract
 import re
 from typing import Dict, List
 
+import cv2
+import pytesseract
 
 # =========================================================
 # CONFIG
@@ -26,6 +26,7 @@ TIME_RANGE = re.compile(r"(\d{1,2}:\d{2})\s*по\s*(\d{1,2}:\d{2})")
 # =========================================================
 # MAIN ENTRY
 # =========================================================
+
 
 def extract_schedule_from_image(image_path: str) -> Dict[str, List[str]]:
     """
@@ -70,6 +71,7 @@ def extract_schedule_from_image(image_path: str) -> Dict[str, List[str]]:
 # OCR ONE CELL
 # =========================================================
 
+
 def ocr_cell_times(cell_img) -> List[str]:
     """
     OCR ОДНІЄЇ КАРТКИ → ЧАСИ
@@ -77,16 +79,9 @@ def ocr_cell_times(cell_img) -> List[str]:
     gray = cv2.cvtColor(cell_img, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
 
-    _, thresh = cv2.threshold(
-        gray, 0, 255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    text = pytesseract.image_to_string(
-        thresh,
-        lang="ukr",
-        config="--psm 6"
-    ).lower()
+    text = pytesseract.image_to_string(thresh, lang="ukr", config="--psm 6").lower()
 
     ranges = []
 
@@ -99,6 +94,7 @@ def ocr_cell_times(cell_img) -> List[str]:
 # =========================================================
 # HELPERS
 # =========================================================
+
 
 def fix_time(t: str) -> str:
     h, m = map(int, t.split(":"))

@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import re
 from typing import Optional
 
@@ -62,8 +62,9 @@ GROUP_TEMPLATE = {
 TIME_RANGE = re.compile(r"(\d{1,2}:\d{2})\s*по\s*(\d{1,2}:\d{2})")
 TIME_PATTERN = re.compile(
     r"(електроенергії немає|електроенергія є)\s+з\s*(\d{1,2}:\d{2})\s*по\s*(\d{1,2}:\d{2})",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
+
 
 def filter_valid_ranges(active_ranges: list[str]) -> list[str]:
     """
@@ -89,10 +90,10 @@ def filter_valid_ranges(active_ranges: list[str]) -> list[str]:
     return cleaned
 
 
-
 # =========================================================
 # 🧠 ВГАДУВАННЯ ШАБЛОНУ ПО ЧАСАХ (З ЛОГАМИ)
 # =========================================================
+
 
 def guess_template_by_ranges(active_ranges: list[str]) -> Optional[tuple[str, dict, float]]:
     best_date = None
@@ -120,10 +121,10 @@ def guess_template_by_ranges(active_ranges: list[str]) -> Optional[tuple[str, di
     return None
 
 
-
 # =========================================================
 # MAIN PARSER
 # =========================================================
+
 
 def parse_power_text(text: str) -> Optional[dict]:
     if not text or not isinstance(text, str):
@@ -141,18 +142,16 @@ def parse_power_text(text: str) -> Optional[dict]:
     # =========================
     intervals = []
     for state, start, end in TIME_PATTERN.findall(t):
-        intervals.append({
-            "from_time": start,
-            "to_time": end,
-            "status": "OFF" if "немає" in state else "ON"
-        })
+        intervals.append(
+            {"from_time": start, "to_time": end, "status": "OFF" if "немає" in state else "ON"}
+        )
 
     if intervals:
         return {
             "type": "HOURLY_SCHEDULE",
             "intervals": intervals,
             "date": date,
-            "confidence": 1.0  # текст ≈ 100% довіра
+            "confidence": 1.0,  # текст ≈ 100% довіра
         }
 
     # =========================
@@ -173,7 +172,7 @@ def parse_power_text(text: str) -> Optional[dict]:
                 "message": "Графік погодинних відключень",
                 "groups": template,
                 "date": date,
-                "confidence": 0.95
+                "confidence": 0.95,
             }
 
         # 4️⃣ якщо дати нема або вона зламана — ВГАДУЄМО ПО ЧАСАХ
@@ -185,7 +184,7 @@ def parse_power_text(text: str) -> Optional[dict]:
                 "message": "Графік погодинних відключень",
                 "groups": guessed_template,
                 "date": date or guessed_date,
-                "confidence": round(confidence, 2)
+                "confidence": round(confidence, 2),
             }
 
         # 5️⃣ крайній fallback — чисто OCR → групи
@@ -193,17 +192,16 @@ def parse_power_text(text: str) -> Optional[dict]:
             "type": "GROUP_SCHEDULE",
             "groups": map_times_to_groups(active_ranges),
             "date": date,
-            "confidence": 0.4
+            "confidence": 0.4,
         }
 
     return None
 
 
-
-
 # =========================================================
 # HELPERS
 # =========================================================
+
 
 def extract_time_ranges(text: str) -> list[str]:
     result = set()
@@ -333,9 +331,7 @@ def extract_date(text: str) -> Optional[str]:
         "грудня": 12,
     }
     text_date = re.search(
-        r"\b(\d{1,2})\s+("
-        + "|".join(month_names)
-        + r")\s+(20\d{2})\s*(?:р|року)?",
+        r"\b(\d{1,2})\s+(" + "|".join(month_names) + r")\s+(20\d{2})\s*(?:р|року)?",
         text,
         re.IGNORECASE,
     )

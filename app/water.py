@@ -1,5 +1,5 @@
-import re
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -51,10 +51,12 @@ async def fetch_water_posts(limit: int = 20) -> list[dict]:
     for message in soup.select("div.tgme_widget_message")[:limit]:
         text_element = message.select_one(".tgme_widget_message_text")
         date_element = message.select_one("time[datetime]")
-        posts.append({
-            "text": text_element.get_text("\n", strip=True) if text_element else "",
-            "published_at": date_element["datetime"] if date_element else None,
-        })
+        posts.append(
+            {
+                "text": text_element.get_text("\n", strip=True) if text_element else "",
+                "published_at": date_element["datetime"] if date_element else None,
+            }
+        )
 
     return posts
 

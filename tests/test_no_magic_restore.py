@@ -1,10 +1,8 @@
 from app.ocr import extract_intervals, restore_rows
 
+
 def test_no_magic_copy_when_both_empty():
-    groups = {
-        "3.1": [],
-        "3.2": []
-    }
+    groups = {"3.1": [], "3.2": []}
 
     restored = restore_rows(groups)
 

@@ -1,4 +1,4 @@
-﻿# app/ocr.py
+# app/ocr.py
 
 import logging
 import os
@@ -62,10 +62,10 @@ TIME_RE = re.compile(
 )
 
 
-
 # ======================================================
 # PUBLIC ENTRY (API IMPORTS ONLY THIS)
 # ======================================================
+
 
 def extract_schedule_from_image(image_path: str) -> Optional[dict]:
     img = cv2.imread(image_path)
@@ -116,15 +116,13 @@ def detect_no_outages(img: np.ndarray) -> bool:
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     text = pytesseract.image_to_string(gray, lang="ukr+eng", config="--psm 6").lower()
     normalized = re.sub(r"\s+", " ", text)
-    return (
-        "без стабілізаційних" in normalized
-        and "відключень" in normalized
-    )
+    return "без стабілізаційних" in normalized and "відключень" in normalized
 
 
 # ======================================================
 # DATE
 # ======================================================
+
 
 def extract_date_strict(img: np.ndarray) -> Optional[str]:
     h, w, _ = img.shape
@@ -136,18 +134,18 @@ def extract_date_strict(img: np.ndarray) -> Optional[str]:
     for contour in contours:
         x, y, cw, ch = cv2.boundingRect(contour)
         if 40 < cw < 180 and 10 < ch < 60 and y < h * 0.25:
-            crop = img[max(0, y - 3):min(h, y + ch + 3), max(0, x - 3):min(w, x + cw + 3)]
+            crop = img[max(0, y - 3) : min(h, y + ch + 3), max(0, x - 3) : min(w, x + cw + 3)]
             gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             gray_crop = cv2.resize(gray_crop, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
             candidates.append((gray_crop, "--psm 7 -c tessedit_char_whitelist=0123456789."))
 
-    roi = img[int(h * 0.05):int(h * 0.17), int(w * 0.35):int(w * 0.65)]
+    roi = img[int(h * 0.05) : int(h * 0.17), int(w * 0.35) : int(w * 0.65)]
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     candidates.append((thresh, "--psm 7 -c tessedit_char_whitelist=0123456789."))
 
-    wide_roi = img[int(h * 0.04):int(h * 0.14), int(w * 0.20):int(w * 0.75)]
+    wide_roi = img[int(h * 0.04) : int(h * 0.14), int(w * 0.20) : int(w * 0.75)]
     wide_gray = cv2.cvtColor(wide_roi, cv2.COLOR_BGR2GRAY)
     wide_gray = cv2.resize(wide_gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
     candidates.append((wide_gray, "--psm 6"))
@@ -168,6 +166,7 @@ def extract_date_strict(img: np.ndarray) -> Optional[str]:
 # ======================================================
 # OCR / TIME
 # ======================================================
+
 
 def ocr_tile(tile: np.ndarray) -> str:
     tile = cv2.resize(tile, None, fx=2, fy=2)
@@ -212,20 +211,16 @@ def fix_time(h: str, m: str) -> Optional[str]:
 # GRID
 # ======================================================
 
+
 def split_tiles(img: np.ndarray) -> List[np.ndarray]:
     h, w, _ = img.shape
-    grid = img[int(h * 0.17):h, 0:w]
+    grid = img[int(h * 0.17) : h, 0:w]
     gh, gw, _ = grid.shape
 
     tiles = []
     for r in range(6):
         for c in range(2):
-            tiles.append(
-                grid[
-                    r * gh // 6:(r + 1) * gh // 6,
-                    c * gw // 2:(c + 1) * gw // 2
-                ]
-            )
+            tiles.append(grid[r * gh // 6 : (r + 1) * gh // 6, c * gw // 2 : (c + 1) * gw // 2])
     return tiles
 
 
@@ -244,4 +239,3 @@ def restore_rows(groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
                 out[b] = merged
 
     return out
-

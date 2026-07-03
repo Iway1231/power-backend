@@ -1,37 +1,96 @@
 # Power Backend
 
-Backend API for reading electricity outage updates from the Naftogaz Teplo / Novoyavorivsk power channel.
+[![CI](https://github.com/Iway1231/power-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/Iway1231/power-backend/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.127-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-The service fetches recent Telegram posts, parses outage schedules from images and text, and exposes the current result through a FastAPI endpoint.
+Power Backend is a production-oriented FastAPI service for utility outage data in the Novoyavorivsk community. It reads public Telegram posts, parses text and OCR-based schedule images, enriches results with local address/group mappings, and exposes mobile-friendly API endpoints for electricity and water outage status.
 
-## What It Parses
+The project is designed to be simple enough for local civic tooling and structured enough for open-source collaboration: typed configuration, Docker support, CI, tests, security headers, rate limiting, health checks, and public contribution guidelines.
 
-- Hourly group outage schedule images.
-- Images that say there are no stabilization outages.
-- Text posts about temporary planned outages.
-- Planned outage posts by address, for example `вул. Курортна смт. Шкло`.
-- Planned outage posts by group, for example `споживачів групи 3.2`.
-- Text dates such as `05.06.2026` and `19 травня 2026 року`.
+## Features
 
-## API
+- Electricity outage parsing from Naftogaz Teplo Telegram posts.
+- OCR support for group schedule images with Tesseract, OpenCV, and Ukrainian language data.
+- Planned outage detection by group, village, street, and time interval.
+- Lvivoblenergo address lookup integration for cities, streets, buildings, and account groups.
+- Water outage notices from the public Novoyavorivskvodokanal Telegram channel.
+- Android-friendly endpoints for operator selection, address dropdowns, bootstrap config, and personal status checks.
+- In-memory caching with stale fallback for upstream address data.
+- Validated environment configuration and safe defaults.
+- Security headers, request IDs, rate limiting, structured logging, and Swagger/OpenAPI docs.
 
-Start the server and open:
+## Tech Stack
 
-```text
-http://127.0.0.1:8000/
-http://127.0.0.1:8000/status
-http://127.0.0.1:8000/docs
+- **Python 3.10+**
+- **FastAPI** and **Pydantic**
+- **HTTPX** for upstream HTTP requests
+- **BeautifulSoup** and **lxml** for Telegram HTML parsing
+- **Tesseract OCR**, **OpenCV**, **Pillow**, and **NumPy** for image parsing
+- **pytest** and **pytest-asyncio** for tests
+- **Ruff** for linting and formatting
+- **Docker** and **GitHub Actions** for delivery
+
+## Quick Start
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt -r requirements-dev.txt
+copy .env.example .env
+uvicorn app.main:app --reload
 ```
 
-Main endpoint:
+Open:
+
+```text
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/api/v1/health
+```
+
+Tesseract must be installed separately for OCR endpoints to parse local images reliably. The Docker image installs the required OCR packages automatically.
+
+## Docker
+
+Build and run with Docker Compose:
+
+```powershell
+copy .env.production.example .env
+docker compose up --build
+```
+
+Or build the image directly:
+
+```powershell
+docker build -t power-backend .
+docker run --rm -p 8000:8000 --env-file .env.production.example power-backend
+```
+
+The container exposes `GET /api/v1/health` as its healthcheck and stores runtime data in `/app/data`.
+
+## API Examples
+
+Health check:
+
+```http
+GET /api/v1/health
+```
+
+Current parsed electricity status:
 
 ```http
 GET /api/v1/status
 ```
 
-Legacy unversioned routes such as `/status` still work, but Android should prefer `/api/v1/...` routes.
+Personal status by Naftogaz group:
 
-Lvivoblenergo address lookup endpoints for app dropdowns:
+```http
+GET /api/v1/my-status?operator=naftogaz&group=2.1
+```
+
+Lvivoblenergo address dropdowns:
 
 ```http
 GET /api/v1/loe/cities
@@ -40,326 +99,122 @@ GET /api/v1/loe/buildings?city=Шкло&street=1-го%20Травня
 GET /api/v1/loe/lookup?city=Шкло&street=1-го%20Травня&building=1
 ```
 
-Novoyavorivskvodokanal current water outage:
+Water outage notice:
 
 ```http
 GET /api/v1/water/status
 ```
 
-The water endpoint reads public posts from
-`https://t.me/vodocanal_nya`, extracts the outage date, start and
-restoration times, and affected locations. Expired notices are ignored.
-
-Example group schedule response:
+Example response:
 
 ```json
 {
-  "city": "Новояворівськ",
-  "operator": "Нафтогаз Тепло",
-  "type": "GROUP_SCHEDULE",
-  "groups": {
-    "2.1": {
-      "status": "OFF",
-      "outages": ["06:00-08:00"]
-    }
-  },
-  "date": "2026-04-11",
-  "confidence": 0.9
-}
-```
-
-Example planned outage response:
-
-```json
-{
-  "city": "Новояворівськ",
-  "operator": "Нафтогаз Тепло",
-  "type": "PLANNED_OUTAGE",
-  "message": "Тимчасове припинення електропостачання",
-  "intervals": [
-    {
-      "from_time": "10:00",
-      "to_time": "16:00",
-      "status": "OFF",
-      "address": "с. Ліс та с. Окілки",
-      "settlements": [
-        {
-          "name": "с. Ліс",
-          "naftogaz": {
-            "group": "1.2"
-          }
-        },
-        {
-          "name": "с. Окілки",
-          "naftogaz": {
-            "group": "1.2"
-          }
-        }
-      ],
-      "naftogaz": {
-        "group": "1.2"
-      }
-    }
-  ],
-  "date": "2026-05-19",
+  "operator": "Новояворівськводоканал",
+  "type": "WATER_OUTAGE",
+  "message": "Тимчасове припинення водопостачання",
+  "date": "2026-06-09",
+  "from_time": "10:00",
+  "to_time": "17:00",
+  "locations": ["вул. Зелена", "с. Когути", "с. Стені"],
+  "source": "telegram",
+  "channel": "vodocanal_nya",
   "confidence": 1.0
 }
 ```
 
-## Android App Flow
-
-Use this sequence when building the Android app.
-
-### 1. Load App Config
-
-```http
-GET /api/v1/app/config
-```
-
-This returns the API version, supported operators, endpoint paths, and cache settings. Android should call this once at startup and then use the returned `endpoints` values.
-
-If the app also needs Naftogaz groups immediately, use the bootstrap endpoint instead:
-
-```http
-GET /api/v1/app/bootstrap
-```
-
-It returns `config` plus `naftogaz_groups` in one response.
-
-### 2. Load Operators
-
-```http
-GET /api/v1/operators
-```
-
-Example:
-
-```json
-[
-  {
-    "id": "naftogaz",
-    "name": "Нафтогаз Тепло",
-    "status_url": "/api/v1/my-status?operator=naftogaz&group={group}",
-    "selection": "group"
-  },
-  {
-    "id": "loe",
-    "name": "Львівобленерго",
-    "status_url": "/api/v1/my-status?operator=loe&city={city}&street={street}&building={building}",
-    "selection": "address"
-  }
-]
-```
-
-If `selection` is `group`, show Naftogaz groups. If `selection` is `address`, show city, street, and building dropdowns.
-
-### 3. Naftogaz User Setup
-
-Load available Naftogaz groups and their address hints:
-
-```http
-GET /api/v1/naftogaz/groups
-```
-
-Example group item:
-
-```json
-{
-  "id": "2.1",
-  "name": "Група 2.1",
-  "addresses": [
-    {
-      "group": "2.1",
-      "type": "street",
-      "city": "Новояворівськ",
-      "name": "Січових Стрільців",
-      "buildings": ["1", "2", "4", "6"]
-    }
-  ]
-}
-```
-
-Save the selected group locally in the Android app.
-
-Check personal status:
-
-```http
-GET /api/v1/my-status?operator=naftogaz&group=2.1
-```
-
-Example:
-
-```json
-{
-  "operator": "naftogaz",
-  "group": "2.1",
-  "has_outage": false,
-  "status": "ON",
-  "title": "Світло має бути",
-  "subtitle": "Для групи 2.1 відключень не заплановано",
-  "details": [
-    {"label": "Група", "value": "2.1"},
-    {"label": "Дата", "value": "2026-06-07"},
-    {"label": "Інтервали", "value": []}
-  ]
-}
-```
-
-### 4. Lvivoblenergo User Setup
-
-Load cities:
-
-```http
-GET /api/v1/loe/cities
-```
-
-Load streets after city selection:
-
-```http
-GET /api/v1/loe/streets?city=Шкло
-```
-
-Load buildings after street selection:
-
-```http
-GET /api/v1/loe/buildings?city=Шкло&street=1-го%20Травня
-```
-
-Save `city`, `street`, and `building` locally in the Android app.
-
-Check personal status:
-
-```http
-GET /api/v1/my-status?operator=loe&city=Шкло&street=1-го%20Травня&building=1
-```
-
-Example:
-
-```json
-{
-  "operator": "loe",
-  "city": "Шкло",
-  "street": "1-го травня",
-  "building": "1",
-  "has_outage": false,
-  "status": "UNKNOWN",
-  "title": "Групи адреси отримано",
-  "subtitle": "ГПВ 2.2, ГАВ 6, АЧР 4 (48.8Гц)",
-  "details": [
-    {"label": "ГПВ", "value": "2.2"},
-    {"label": "ГАВ", "value": "6"},
-    {"label": "АЧР", "value": "4 (48.8Гц)"}
-  ],
-  "loe": {
-    "gpv": "2.2",
-    "gav": "6",
-    "sgav": null,
-    "achr": "4 (48.8Гц)",
-    "gvsp": null
-  }
-}
-```
-
-For Lvivoblenergo, `gpv`, `gav`, `sgav`, `achr`, and `gvsp` are address groups, not a full hourly outage schedule. The API uses `status: "UNKNOWN"` unless Lvivoblenergo returns an explicit `disconnection_task`.
-
-### 5. Service Checks
-
-Health check:
-
-```http
-GET /api/v1/health
-```
-
-Lvivoblenergo cache status:
-
-```http
-GET /api/v1/cache/status
-```
-
-## Setup
-
-Create and activate a virtual environment:
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
-
-Install dependencies:
-
-```powershell
-pip install -r requirements.txt
-```
-
-Optional local configuration:
-
-```powershell
-copy .env.example .env
-```
-
-Supported environment variables:
+Swagger UI and OpenAPI JSON:
 
 ```text
-CHANNEL_URL=https://t.me/s/nya_merezhi
-WATER_CHANNEL_URL=https://t.me/s/vodocanal_nya
-CITY_ID=novoyavorivsk
-CITY_NAME=Новояворівськ
-REGION=Львівська область
-OPERATOR=Нафтогаз Тепло
-TIMEZONE=Europe/Kyiv
-LOE_CACHE_TTL_SECONDS=300
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/openapi.json
 ```
 
-Install Tesseract OCR separately and make sure the `tesseract` executable is available in `PATH`.
+## Environment Variables
 
-The OCR logic uses Ukrainian and English trained data:
+| Variable | Default | Description |
+| --- | --- | --- |
+| `APP_NAME` | `Power Schedule API` | Public API name. |
+| `APP_VERSION` | `1.0.0` | Semantic application version. |
+| `ENVIRONMENT` | `development` | `development`, `test`, or `production`. |
+| `DEBUG` | `false` | Enables FastAPI debug mode. |
+| `HOST` | `0.0.0.0` | Server host for deployment scripts. |
+| `PORT` | `8000` | Server port. |
+| `LOG_LEVEL` | `INFO` | Python log level. |
+| `LOG_FORMAT` | `console` | `console` or `json`. |
+| `CHANNEL_URL` | `https://t.me/s/nya_merezhi` | Naftogaz Telegram public mirror URL. |
+| `WATER_CHANNEL_URL` | `https://t.me/s/vodocanal_nya` | Water utility Telegram public mirror URL. |
+| `CITY_ID` | `novoyavorivsk` | Internal city identifier. |
+| `CITY_NAME` | `Новояворівськ` | Display city name. |
+| `REGION` | `Львівська область` | Display region name. |
+| `OPERATOR` | `Нафтогаз Тепло` | Primary electricity operator name. |
+| `TIMEZONE` | `Europe/Kyiv` | IANA timezone name. |
+| `STATUS_CACHE_TTL_SECONDS` | `90` | Parsed status cache lifetime. |
+| `LOE_CACHE_TTL_SECONDS` | `300` | Lvivoblenergo lookup cache lifetime. |
+| `REQUEST_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout. |
+| `RATE_LIMIT_REQUESTS` | `120` | Requests allowed per window and route. |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate limit window length. |
+| `CORS_ORIGINS` | empty | Comma-separated allowed origins. |
+| `ALLOWED_HOSTS` | `*` | Comma-separated trusted hostnames. |
+| `DATA_DIR` | `data` | Runtime data directory. |
+
+## Project Structure
 
 ```text
-ukr
-eng
+app/
+  api.py              # API routes and response composition
+  config.py           # validated runtime settings
+  errors.py           # consistent exception responses
+  group_directory.py  # Naftogaz group/address mapping
+  loe_api.py          # Lvivoblenergo API client and cache
+  main.py             # FastAPI app factory and middleware
+  middleware.py       # request IDs, security headers, rate limiting
+  ocr.py              # OCR schedule parsing
+  parser.py           # text post parsing
+  telegram_html.py    # Telegram public HTML reader
+  water.py            # water outage parser and endpoint
+tests/                # regression and route tests
+.github/              # CI, issue templates, PR template
+Dockerfile            # production container image
+docker-compose.yml    # local production-like stack
 ```
 
-## Run
+## Development
+
+Run tests:
 
 ```powershell
-uvicorn app.main:app --reload
+python -m pytest -q
 ```
 
-## Tests
-
-Run all tests:
+Run linting and formatting checks:
 
 ```powershell
-pytest
+ruff check .
+ruff format --check .
 ```
 
-Run focused tests:
+Apply formatting:
 
 ```powershell
-pytest tests/test_no_magic_restore.py tests/test_planned_outage_text.py tests/test_group_directory.py -q
+ruff format .
 ```
 
-## Project Notes
+## Contributing
 
-- `images/`, `debug/`, `cache/`, `history/`, `data/`, `.vs/`, and `venv/` are local working folders and are ignored by git.
-- `app/ocr.py` handles schedule image OCR.
-- `app/parser.py` handles text post parsing.
-- `app/group_directory.py` maps known addresses and villages to Naftogaz outage groups.
-- `app/loe_api.py` normalizes Lvivoblenergo account data from `power-api.loe.lviv.ua`.
-- Lvivoblenergo groups stay separate from Naftogaz groups. Use the `loe` object for `gpv`, `gav`, `sgav`, `achr`, and `gvsp` data.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md), follow the [Code of Conduct](CODE_OF_CONDUCT.md), and open an issue before larger changes.
 
-Example Lvivoblenergo data:
+Good first contributions include:
 
-```json
-{
-  "building": "2-А",
-  "loe": {
-    "gpv": "2.2",
-    "gav": "6",
-    "sgav": null,
-    "achr": "4 (48.8Гц)",
-    "gvsp": null
-  }
-}
-```
-- `app/api.py` combines Telegram fetching, OCR parsing, text parsing, and the `/status` response.
+- adding more OCR regression images,
+- improving address normalization,
+- strengthening parser tests,
+- documenting Android integration examples,
+- improving deployment examples.
+
+## Security
+
+Please do not open public issues for vulnerabilities. Follow [SECURITY.md](SECURITY.md) for responsible disclosure.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
