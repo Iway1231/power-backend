@@ -8,6 +8,7 @@ from app.config import SETTINGS, Settings
 from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
 from app.middleware import (
+    ApiKeyMiddleware,
     RateLimitMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
@@ -54,8 +55,22 @@ def create_app(settings: Settings = SETTINGS) -> FastAPI:
             allow_origins=settings.cors_origins,
             allow_credentials=False,
             allow_methods=["GET"],
-            allow_headers=["Accept", "Content-Type", "X-Request-ID"],
+            allow_headers=["Accept", "Content-Type", "X-API-Key", "X-Request-ID"],
         )
+    public_paths = {
+        "/",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/health",
+        f"{API_V1_PREFIX}/health",
+    }
+    application.add_middleware(
+        ApiKeyMiddleware,
+        api_key=settings.api_key,
+        required=settings.api_key_required,
+        excluded_paths=public_paths,
+    )
     application.add_middleware(
         RateLimitMiddleware,
         requests=settings.rate_limit_requests,

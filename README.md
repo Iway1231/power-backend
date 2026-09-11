@@ -190,6 +190,8 @@ http://127.0.0.1:8000/openapi.json
 | `REQUEST_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout. |
 | `RATE_LIMIT_REQUESTS` | `120` | Requests allowed per window and route. |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate limit window length. |
+| `API_KEY` | empty | Optional shared API key expected in the `X-API-Key` header. |
+| `API_KEY_REQUIRED` | `false` | When `true`, protected routes reject requests without a valid key. |
 | `CORS_ORIGINS` | empty | Comma-separated allowed origins. |
 | `ALLOWED_HOSTS` | `*` | Comma-separated trusted hostnames. |
 | `DATA_DIR` | `data` | Runtime data directory. |

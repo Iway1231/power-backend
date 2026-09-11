@@ -1,4 +1,5 @@
 import logging
+import secrets
 import threading
 import time
 import uuid
@@ -63,6 +64,55 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if self.production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
+
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    def __init__(
+        self,
+        app,
+        api_key: str | None,
+        required: bool = False,
+        excluded_paths: set[str] | None = None,
+    ):
+        super().__init__(app)
+        self.api_key = api_key
+        self.required = required
+        self.excluded_paths = excluded_paths or set()
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        if request.url.path in self.excluded_paths:
+            return await call_next(request)
+        if not self.api_key and not self.required:
+            return await call_next(request)
+        if not self.api_key:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "code": "api_key_not_configured",
+                        "message": "API key protection is enabled but no API key is configured",
+                    }
+                },
+            )
+
+        provided_key = request.headers.get("X-API-Key")
+        if not provided_key or not secrets.compare_digest(provided_key, self.api_key):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": {
+                        "code": "invalid_api_key",
+                        "message": "A valid X-API-Key header is required",
+                    }
+                },
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+
+        return await call_next(request)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

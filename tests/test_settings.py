@@ -23,3 +23,10 @@ def test_settings_accept_production_configuration(tmp_path):
 
     assert settings.environment == "production"
     assert settings.data_dir == tmp_path
+
+
+def test_settings_accept_api_key_configuration():
+    settings = Settings(api_key="secret", api_key_required=True)
+
+    assert settings.api_key == "secret"
+    assert settings.api_key_required is True
