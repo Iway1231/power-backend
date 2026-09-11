@@ -84,6 +84,43 @@ Current parsed electricity status:
 GET /api/v1/status
 ```
 
+
+Mobile home payload:
+
+```http
+GET /api/v1/mobile/home?operator=naftogaz&group=2.1
+GET /api/v1/mobile/home?operator=loe&city=????&street=1-??%20??????&building=1
+```
+
+Use this endpoint as the main Android screen payload. It returns a stable schema with `overall_status`, a primary electricity section, and an optional water section:
+
+```json
+{
+  "schema_version": "1.0",
+  "overall_status": "ON",
+  "sections": [
+    {
+      "id": "electricity",
+      "label": "??????",
+      "status": "ON",
+      "has_outage": false,
+      "title": "?????? ??? ????",
+      "details": []
+    },
+    {
+      "id": "water",
+      "label": "????",
+      "status": "ON",
+      "has_outage": false,
+      "title": "???? ??? ????",
+      "details": []
+    }
+  ]
+}
+```
+
+Pass `include_water=false` if the app needs only electricity data.
+
 Personal status by Naftogaz group:
 
 ```http

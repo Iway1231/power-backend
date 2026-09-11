@@ -29,6 +29,7 @@ from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
 from app.telegram_html import fetch_latest_posts
+from app.water import get_water_status
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ def get_app_config():
             "operators": f"{API_V1_PREFIX}/operators",
             "app_bootstrap": f"{API_V1_PREFIX}/app/bootstrap",
             "personal_status": f"{API_V1_PREFIX}/my-status",
+            "mobile_home": f"{API_V1_PREFIX}/mobile/home",
             "naftogaz_groups": f"{API_V1_PREFIX}/naftogaz/groups",
             "naftogaz_addresses": f"{API_V1_PREFIX}/naftogaz/addresses",
             "loe_cities": f"{API_V1_PREFIX}/loe/cities",
@@ -371,6 +373,96 @@ def build_personal_status_error(
         "subtitle": subtitle,
         "details": details or [],
         "message": message,
+    }
+
+
+def infer_status(has_outage) -> str:
+    if has_outage is True:
+        return "OFF"
+    if has_outage is False:
+        return "ON"
+    return "UNKNOWN"
+
+
+def build_mobile_section(
+    section_id: str,
+    label: str,
+    status: dict,
+    operator: str,
+) -> dict:
+    has_outage = status.get("has_outage")
+    normalized_status = status.get("status") or infer_status(has_outage)
+    source_available = status.get("source_available", True)
+
+    return {
+        "id": section_id,
+        "label": label,
+        "operator": operator,
+        "has_outage": has_outage,
+        "status": normalized_status,
+        "title": status.get("title") or status.get("message") or label,
+        "subtitle": status.get("subtitle") or status.get("message") or "",
+        "details": status.get("details") or [],
+        "date": status.get("date"),
+        "outages": status.get("outages") or [],
+        "intervals": status.get("intervals") or [],
+        "source_available": source_available,
+        "source": status,
+    }
+
+
+def build_water_mobile_section(status: dict) -> dict:
+    is_outage = status.get("type") == "WATER_OUTAGE"
+    has_outage = status.get("has_outage")
+    if has_outage is None and is_outage:
+        has_outage = True
+
+    normalized = {
+        **status,
+        "has_outage": has_outage,
+        "status": "OFF" if is_outage else infer_status(has_outage),
+        "title": "? ??????????? ????" if is_outage else "???? ??? ????",
+        "subtitle": status.get("message") or "",
+        "details": [
+            build_detail("????", status.get("date")),
+            build_detail("???????", status.get("from_time")),
+            build_detail("???????????", status.get("to_time")),
+            build_detail("???????", status.get("locations") or []),
+        ],
+    }
+    return build_mobile_section(
+        "water",
+        "????",
+        normalized,
+        "??????????????????????",
+    )
+
+
+def build_mobile_home_response(electricity: dict, water: Optional[dict] = None) -> dict:
+    electricity_section = build_mobile_section(
+        "electricity",
+        "??????",
+        electricity,
+        electricity.get("operator") or config.OPERATOR,
+    )
+    sections = [electricity_section]
+
+    if water is not None:
+        sections.append(build_water_mobile_section(water))
+
+    if any(section["has_outage"] is True for section in sections):
+        overall_status = "OFF"
+    elif any(section["has_outage"] is None for section in sections):
+        overall_status = "UNKNOWN"
+    else:
+        overall_status = "ON"
+
+    return {
+        "schema_version": "1.0",
+        "updated_at": datetime.now().isoformat(),
+        "overall_status": overall_status,
+        "sections": sections,
+        "primary": electricity_section,
     }
 
 
@@ -603,6 +695,26 @@ async def get_my_status(
         "Оберіть Нафтогаз Тепло або Львівобленерго",
         [build_detail("Оператор", operator)],
     )
+
+
+@router.get("/mobile/home", tags=["outages"])
+async def get_mobile_home(
+    operator: Annotated[str, Query(min_length=2, max_length=40)] = "naftogaz",
+    group: Annotated[Optional[str], Query(max_length=10)] = None,
+    city: Annotated[Optional[str], Query(max_length=120)] = None,
+    street: Annotated[Optional[str], Query(max_length=160)] = None,
+    building: Annotated[Optional[str], Query(max_length=40)] = None,
+    include_water: bool = True,
+):
+    electricity = await get_my_status(
+        operator=operator,
+        group=group,
+        city=city,
+        street=street,
+        building=building,
+    )
+    water = await get_water_status() if include_water else None
+    return build_mobile_home_response(electricity, water)
 
 
 def save_status(parsed: dict) -> PowerStatus:
