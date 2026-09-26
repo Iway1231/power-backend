@@ -1,4 +1,11 @@
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+
   api:
     build:
       context: .
@@ -11,6 +18,7 @@ services:
       ENVIRONMENT: production
       LOG_FORMAT: json
       DATA_DIR: /app/data
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -30,3 +38,4 @@ services:
 
 volumes:
   power_data:
+  redis_data:

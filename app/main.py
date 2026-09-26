@@ -76,6 +76,8 @@ def create_app(settings: Settings = SETTINGS) -> FastAPI:
         requests=settings.rate_limit_requests,
         window_seconds=settings.rate_limit_window_seconds,
         excluded_paths={"/health", f"{API_V1_PREFIX}/health"},
+        redis_url=settings.redis_url,
+        redis_key_prefix=settings.redis_key_prefix,
     )
     application.add_middleware(
         SecurityHeadersMiddleware,

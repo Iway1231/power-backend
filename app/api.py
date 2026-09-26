@@ -28,12 +28,14 @@ from app.loe_api import (
 from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
+from app.redis_store import RedisStore
 from app.telegram_html import fetch_latest_posts
 from app.water import get_water_status
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_redis_store = RedisStore(config.SETTINGS.redis_url, config.SETTINGS.redis_key_prefix)
 
 config.DATA_DIR.mkdir(parents=True, exist_ok=True)
 FALLBACK_FILE = config.DATA_DIR / "last_status.json"
@@ -604,6 +606,15 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
 
 @router.get("/status", response_model=PowerStatus, tags=["outages"])
 async def get_power_status():
+    cached = await _redis_store.get_json("status:power")
+    if isinstance(cached, dict):
+        return PowerStatus(**cached)
+    result = await _fetch_power_status()
+    await _redis_store.set_json("status:power", result.dict(), config.STATUS_CACHE_TTL_SECONDS)
+    return result
+
+
+async def _fetch_power_status():
     global _status_cache, _status_cache_time
 
     now = time.time()

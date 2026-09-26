@@ -62,6 +62,8 @@ class Settings(BaseModel):
     request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     rate_limit_requests: int = Field(default=120, ge=1, le=10000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
+    redis_url: str | None = None
+    redis_key_prefix: str = "power-backend"
     api_key: str | None = None
     api_key_required: bool = False
     cors_origins: list[str] = Field(default_factory=list)
@@ -121,6 +123,8 @@ def load_settings() -> Settings:
         request_timeout_seconds=os.getenv("REQUEST_TIMEOUT_SECONDS", "30"),
         rate_limit_requests=os.getenv("RATE_LIMIT_REQUESTS", "120"),
         rate_limit_window_seconds=os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"),
+        redis_url=os.getenv("REDIS_URL") or None,
+        redis_key_prefix=os.getenv("REDIS_KEY_PREFIX", "power-backend"),
         api_key=os.getenv("API_KEY") or None,
         api_key_required=_env_bool("API_KEY_REQUIRED", False),
         cors_origins=_env_list("CORS_ORIGINS", ""),

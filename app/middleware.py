@@ -10,6 +10,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
+from app.redis_store import RedisStore, stable_key
+
 logger = logging.getLogger("app.requests")
 
 
@@ -122,6 +124,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         requests: int,
         window_seconds: int,
         excluded_paths: set[str] | None = None,
+        redis_url: str | None = None,
+        redis_key_prefix: str = "power-backend",
     ):
         super().__init__(app)
         self.requests = requests
@@ -129,6 +133,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.excluded_paths = excluded_paths or set()
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
+        self._redis = RedisStore(redis_url, redis_key_prefix)
 
     async def dispatch(
         self,
@@ -140,6 +145,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         client_host = request.client.host if request.client else "unknown"
         key = f"{client_host}:{request.url.path}"
+        redis_result = await self._redis.increment_with_window(
+            stable_key("rate", key), self.window_seconds
+        )
+        if redis_result is not None:
+            count, retry_after = redis_result
+            if count > self.requests:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": {"code": "rate_limit_exceeded", "message": "Too many requests"}
+                    },
+                    headers={
+                        "Retry-After": str(retry_after),
+                        "X-RateLimit-Limit": str(self.requests),
+                        "X-RateLimit-Remaining": "0",
+                    },
+                )
+            response = await call_next(request)
+            response.headers["X-RateLimit-Limit"] = str(self.requests)
+            response.headers["X-RateLimit-Remaining"] = str(max(0, self.requests - count))
+            return response
+
         now = time.monotonic()
 
         with self._lock:

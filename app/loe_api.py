@@ -6,11 +6,13 @@ from typing import Any, Optional
 import httpx
 
 from app import config
+from app.redis_store import RedisStore, stable_key
 
 BASE_URL = "https://power-api.loe.lviv.ua/api"
 NOT_INCLUDED_TEXT = "Не входить"
 LOE_CACHE_TTL_SECONDS = config.LOE_CACHE_TTL_SECONDS
 _LOE_CACHE: dict[tuple, tuple[float, dict]] = {}
+_redis_store = RedisStore(config.SETTINGS.redis_url, config.SETTINGS.redis_key_prefix)
 
 
 async def fetch_loe_cities(otg_id: Optional[int] = None) -> list[dict]:
@@ -47,6 +49,12 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
     if cached is not None:
         return cached
 
+    shared_key = stable_key("loe", repr(get_loe_cache_key(path, params)))
+    shared_cached = await _redis_store.get_json(shared_key)
+    if isinstance(shared_cached, dict):
+        set_cached_loe_collection(path, params, shared_cached)
+        return shared_cached
+
     headers = {
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://poweron.loe.lviv.ua/",
@@ -59,6 +67,7 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
             response.raise_for_status()
             data = response.json()
             set_cached_loe_collection(path, params, data)
+            await _redis_store.set_json(shared_key, data, LOE_CACHE_TTL_SECONDS)
             return data
     except httpx.HTTPError:
         stale = get_stale_loe_collection(path, params)
