@@ -11,8 +11,13 @@ from typing import Annotated, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from app import config
+from app.address_matching import address_matches
 from app.config import GROUP_ORDER
-from app.group_directory import list_naftogaz_addresses, list_naftogaz_groups
+from app.group_directory import (
+    infer_groups_for_address,
+    list_naftogaz_addresses,
+    list_naftogaz_groups,
+)
 from app.image_loader import download_image
 from app.loe_api import (
     LOE_CACHE_TTL_SECONDS,
@@ -468,7 +473,14 @@ def build_mobile_home_response(electricity: dict, water: Optional[dict] = None) 
     }
 
 
-def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] = None) -> dict:
+def build_my_naftogaz_status(
+    status: dict,
+    group: str,
+    now: Optional[datetime] = None,
+    city: Optional[str] = None,
+    street: Optional[str] = None,
+    building: Optional[str] = None,
+) -> dict:
     if group not in GROUP_ORDER:
         return {
             "operator": "naftogaz",
@@ -511,15 +523,21 @@ def build_my_naftogaz_status(status: dict, group: str, now: Optional[datetime] =
         matching_intervals = []
         for interval in status.get("intervals") or []:
             naftogaz = interval.get("naftogaz") or {}
-            if naftogaz.get("group") == group:
-                matching_intervals.append(interval)
-                continue
-
-            for settlement in interval.get("settlements") or []:
-                settlement_naftogaz = settlement.get("naftogaz") or {}
-                if settlement_naftogaz.get("group") == group:
+            group_match = naftogaz.get("group") == group
+            if not group_match:
+                group_match = any(
+                    (settlement.get("naftogaz") or {}).get("group") == group
+                    for settlement in interval.get("settlements") or []
+                )
+            address_targets = interval.get("addresses") or []
+            if address_targets and city and street and building:
+                if any(
+                    address_matches(target, city, street, building) for target in address_targets
+                ):
                     matching_intervals.append(interval)
-                    break
+                continue
+            if group_match:
+                matching_intervals.append(interval)
 
         has_outage = bool(matching_intervals)
         return {
@@ -673,6 +691,10 @@ async def get_my_status(
 
     if normalized_operator in ("naftogaz", "нафтогаз"):
         status = (await get_power_status()).dict()
+        if not group and city and street and building:
+            inferred_groups = infer_groups_for_address(f"{city} {street} {building}")
+            if len(inferred_groups) == 1:
+                group = inferred_groups[0]
         if not group:
             return build_personal_status_error(
                 "naftogaz",
@@ -680,7 +702,7 @@ async def get_my_status(
                 "Не вибрано групу",
                 "Оберіть групу Нафтогазу для перевірки статусу",
             )
-        return build_my_naftogaz_status(status, group)
+        return build_my_naftogaz_status(status, group, city=city, street=street, building=building)
 
     if normalized_operator in ("loe", "львівобленерго", "lvivoblenergo"):
         if not city or not street or not building:

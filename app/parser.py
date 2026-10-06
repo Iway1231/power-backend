@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Optional
 
+from app.address_matching import extract_address_targets
 from app.group_directory import infer_groups_for_address, infer_settlements_for_address
 
 logger = logging.getLogger(__name__)
@@ -214,9 +215,10 @@ def extract_time_ranges(text: str) -> list[str]:
 
 def parse_planned_outage(text: str) -> Optional[dict]:
     normalized_text = text.lower()
-    has_outage_text = (
-        "припинення електропостачання" in normalized_text
-        or "буде припинено електропостачання" in normalized_text
+    has_outage_text = bool(
+        re.search(
+            r"припинен(?:о|а)\s+електропостачання|припинення\s+електропостачання", normalized_text
+        )
     )
     if not has_outage_text:
         return None
@@ -236,12 +238,16 @@ def parse_planned_outage(text: str) -> Optional[dict]:
         return None
 
     address = extract_planned_address(text)
+    address_targets = extract_address_targets(text)
     group = extract_planned_group(text)
     interval = {
         "from_time": start,
         "to_time": end,
         "status": "OFF",
     }
+    if address_targets:
+        interval["address_scope"] = "ADDRESSES"
+        interval["addresses"] = address_targets
     if address:
         interval["address"] = address
         settlements = infer_settlements_for_address(address)

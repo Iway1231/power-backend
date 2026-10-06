@@ -20,6 +20,8 @@ def test_planned_outage_text_message():
             "from_time": "09:00",
             "to_time": "17:00",
             "status": "OFF",
+            "address_scope": "ADDRESSES",
+            "addresses": [{"street": "курортна", "buildings": []}],
             "address": "вул. Курортна смт. Шкло",
             "settlements": [{"name": "смт. Шкло", "naftogaz": {"group": "1.2"}}],
             "naftogaz": {"group": "1.2"},
