@@ -428,27 +428,27 @@ def build_water_mobile_section(status: dict) -> dict:
         **status,
         "has_outage": has_outage,
         "status": "OFF" if is_outage else infer_status(has_outage),
-        "title": "? ??????????? ????" if is_outage else "???? ??? ????",
+        "title": "Є відключення води" if is_outage else "Вода є",
         "subtitle": status.get("message") or "",
         "details": [
-            build_detail("????", status.get("date")),
-            build_detail("???????", status.get("from_time")),
-            build_detail("???????????", status.get("to_time")),
-            build_detail("???????", status.get("locations") or []),
+            build_detail("Дата", status.get("date")),
+            build_detail("Початок", status.get("from_time")),
+            build_detail("Відновлення", status.get("to_time")),
+            build_detail("Адреси", status.get("locations") or []),
         ],
     }
     return build_mobile_section(
         "water",
-        "????",
+        "Вода",
         normalized,
-        "??????????????????????",
+        "Новояворівськводоканал",
     )
 
 
 def build_mobile_home_response(electricity: dict, water: Optional[dict] = None) -> dict:
     electricity_section = build_mobile_section(
         "electricity",
-        "??????",
+        "Електроенергія",
         electricity,
         electricity.get("operator") or config.OPERATOR,
     )

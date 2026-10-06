@@ -13,19 +13,19 @@ def test_build_mobile_home_response_for_electricity_and_water():
         "group": "2.1",
         "has_outage": False,
         "status": "ON",
-        "title": "?????? ??? ????",
-        "subtitle": "??? ????? 2.1 ?????????? ?????",
-        "details": [{"label": "?????", "value": "2.1"}],
+        "title": "Світло має бути",
+        "subtitle": "Для групи 2.1 відключень не заплановано",
+        "details": [{"label": "Група", "value": "2.1"}],
         "date": "2026-09-11",
     }
     water = {
-        "operator": "??????????????????????",
+        "operator": "Новояворівськводоканал",
         "type": "WATER_OUTAGE",
-        "message": "????????? ?????????? ??????????????",
+        "message": "Тимчасове припинення водопостачання",
         "date": "2026-09-11",
         "from_time": "10:00",
         "to_time": "17:00",
-        "locations": ["???. ??????"],
+        "locations": ["вул. Зелена"],
     }
 
     result = build_mobile_home_response(electricity, water)
@@ -34,11 +34,12 @@ def test_build_mobile_home_response_for_electricity_and_water():
     assert result["overall_status"] == "OFF"
     assert result["primary"]["id"] == "electricity"
     assert result["sections"][0]["status"] == "ON"
+    assert result["sections"][0]["label"] == "Електроенергія"
     assert result["sections"][1]["id"] == "water"
     assert result["sections"][1]["status"] == "OFF"
     assert result["sections"][1]["details"][3] == {
-        "label": "???????",
-        "value": ["???. ??????"],
+        "label": "Адреси",
+        "value": ["вул. Зелена"],
     }
 
 
@@ -46,7 +47,7 @@ def test_build_mobile_home_response_without_water_section():
     electricity = {
         "operator": "loe",
         "has_outage": None,
-        "title": "????? ?????? ????????",
+        "title": "Адресу не знайдено",
         "details": [],
     }
 
@@ -64,16 +65,16 @@ async def test_get_mobile_home_uses_personal_status_and_water(monkeypatch):
             "group": kwargs["group"],
             "has_outage": False,
             "status": "ON",
-            "title": "?????? ??? ????",
+            "title": "Світло має бути",
             "details": [],
         }
 
     async def fake_get_water_status():
         return {
-            "operator": "??????????????????????",
+            "operator": "Новояворівськводоканал",
             "type": "WATER_STATUS",
             "has_outage": False,
-            "message": "?????????? ??????????? ??? ??????????? ???? ?????",
+            "message": "Актуальних повідомлень про відключення води немає",
         }
 
     monkeypatch.setattr("app.api.get_my_status", fake_get_my_status)
@@ -93,7 +94,7 @@ async def test_get_mobile_home_can_skip_water(monkeypatch):
             "operator": "naftogaz",
             "has_outage": False,
             "status": "ON",
-            "title": "?????? ??? ????",
+            "title": "Світло має бути",
         }
 
     async def fail_get_water_status():
