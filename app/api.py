@@ -55,7 +55,7 @@ _status_cache_time: float = 0
 
 @router.get("/loe/cities", tags=["addresses"])
 async def get_loe_cities():
-    cities = await fetch_loe_cities()
+    cities = await fetch_loe_cities(config.SETTINGS.loe_otg_id)
     return item_names(cities)
 
 
@@ -63,7 +63,7 @@ async def get_loe_cities():
 async def get_loe_streets(
     city: Annotated[str, Query(min_length=1, max_length=120)],
 ):
-    cities = await fetch_loe_cities()
+    cities = await fetch_loe_cities(config.SETTINGS.loe_otg_id)
     city_item = find_named_item(cities, city)
     if not city_item:
         raise HTTPException(
@@ -84,7 +84,7 @@ async def get_loe_buildings(
     city: Annotated[str, Query(min_length=1, max_length=120)],
     street: Annotated[str, Query(min_length=1, max_length=160)],
 ):
-    cities = await fetch_loe_cities()
+    cities = await fetch_loe_cities(config.SETTINGS.loe_otg_id)
     city_item = find_named_item(cities, city)
     if not city_item:
         raise HTTPException(

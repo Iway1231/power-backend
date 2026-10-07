@@ -5,7 +5,7 @@ from app.api import get_loe_buildings, get_loe_cities, get_loe_lookup, get_loe_s
 
 @pytest.mark.asyncio
 async def test_get_loe_cities(monkeypatch):
-    async def fake_fetch_loe_cities():
+    async def fake_fetch_loe_cities(otg_id=None):
         return [{"id": 1053, "name": "Шкло"}]
 
     monkeypatch.setattr("app.api.fetch_loe_cities", fake_fetch_loe_cities)
@@ -15,7 +15,7 @@ async def test_get_loe_cities(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_loe_streets(monkeypatch):
-    async def fake_fetch_loe_cities():
+    async def fake_fetch_loe_cities(otg_id=None):
         return [{"id": 1053, "name": "Шкло"}]
 
     async def fake_fetch_loe_streets(city_id):
@@ -30,7 +30,7 @@ async def test_get_loe_streets(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_loe_buildings(monkeypatch):
-    async def fake_fetch_loe_cities():
+    async def fake_fetch_loe_cities(otg_id=None):
         return [{"id": 1053, "name": "Шкло"}]
 
     async def fake_fetch_loe_streets(city_id):

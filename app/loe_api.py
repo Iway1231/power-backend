@@ -154,7 +154,7 @@ async def lookup_loe_address(
     otg_id: Optional[int] = None,
     debug: bool = False,
 ) -> Optional[dict]:
-    cities = await fetch_loe_cities(otg_id)
+    cities = await fetch_loe_cities(otg_id if otg_id is not None else config.SETTINGS.loe_otg_id)
     city = find_named_item(cities, city_name)
     if not city:
         if debug:
