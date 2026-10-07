@@ -1,4 +1,4 @@
-from app.address_matching import address_matches, extract_address_targets
+from app.address_matching import address_matches, extract_address_targets, extract_entity_targets
 from app.parser import parse_power_text
 
 TEXT_WITH_HEADINGS = """
@@ -46,3 +46,30 @@ def test_planned_outage_contains_structured_addresses():
     interval = result["intervals"][0]
     assert interval["address_scope"] == "ADDRESSES"
     assert len(interval["addresses"]) == 3
+ENTITY_OUTAGE = """
+Увага! Тимчасове припинення електропостачання
+У зв’язку з проведенням планових ремонтних робіт 10.08.2026 р. з 09:00 до 13:00 буде
+тимчасово припинено електропостачання таких споживачів:
+⚡ с. Стадники
+⚡ Житловий масив «Синє очко»
+⚡ Житловий масив К1
+"""
+
+
+def test_extract_entity_targets_from_residential_outage_notice():
+    targets = extract_entity_targets(ENTITY_OUTAGE)
+
+    assert {(target["type"], target["name"], target["group"]) for target in targets} == {
+        ("settlement", "Стадники", "3.1"),
+        ("residential_area", "Житловий масив «Синє очко»", "6.1"),
+        ("residential_area", "Житловий масив К1", "6.1"),
+    }
+
+
+def test_planned_outage_assigns_all_entity_groups():
+    result = parse_power_text(ENTITY_OUTAGE)
+    interval = result["intervals"][0]
+
+    assert interval["entity_scope"] == "ENTITIES"
+    assert {item["group"] for item in interval["entities"]} == {"3.1", "6.1"}
+    assert interval["naftogaz"] == {"groups": ["3.1", "6.1"]}

@@ -3,6 +3,8 @@
 import re
 from typing import Optional
 
+from app.group_directory import list_naftogaz_addresses
+
 STREET_RE = re.compile(r"вул\.?\s+([^\n:;]+)", re.IGNORECASE)
 BUILDING_RE = re.compile(r"\b(\d+[а-яa-zА-ЯA-Z]?(?:[-/]\d+[а-яa-zА-ЯA-Z]?)?)\b")
 
@@ -95,6 +97,23 @@ def extract_address_targets(text: str, city: Optional[str] = None) -> list[dict]
             item["city"] = normalized_city
         result.append(item)
     return result
+
+
+def extract_entity_targets(text: str) -> list[dict]:
+    """Extract settlements and residential areas named in an outage post."""
+    if not text:
+        return []
+
+    normalized_text = normalize_name(text)
+    targets: list[dict] = []
+    for address in list_naftogaz_addresses():
+        if address.get("type") not in {"settlement", "residential_area"}:
+            continue
+        name = address.get("name") or ""
+        if normalize_name(name) not in normalized_text:
+            continue
+        targets.append({"type": address["type"], "name": name, "group": address["group"]})
+    return targets
 
 
 def address_matches(

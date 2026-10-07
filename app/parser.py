@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Optional
 
-from app.address_matching import extract_address_targets
+from app.address_matching import extract_address_targets, extract_entity_targets
 from app.group_directory import infer_groups_for_address, infer_settlements_for_address
 
 logger = logging.getLogger(__name__)
@@ -239,6 +239,12 @@ def parse_planned_outage(text: str) -> Optional[dict]:
 
     address = extract_planned_address(text)
     address_targets = extract_address_targets(text)
+    entity_targets = (
+        extract_entity_targets(text)
+        if "таких споживачів" in normalized_text
+        or "такими адресами та об" in normalized_text
+        else []
+    )
     group = extract_planned_group(text)
     interval = {
         "from_time": start,
@@ -248,6 +254,9 @@ def parse_planned_outage(text: str) -> Optional[dict]:
     if address_targets:
         interval["address_scope"] = "ADDRESSES"
         interval["addresses"] = address_targets
+    if entity_targets:
+        interval["entity_scope"] = "ENTITIES"
+        interval["entities"] = entity_targets
     if address:
         interval["address"] = address
         settlements = infer_settlements_for_address(address)
@@ -255,6 +264,10 @@ def parse_planned_outage(text: str) -> Optional[dict]:
             interval["settlements"] = settlements
 
         inferred_groups = infer_groups_for_address(address)
+        inferred_groups = sorted(
+            set(inferred_groups)
+            | {target["group"] for target in entity_targets if target.get("group")}
+        )
         if len(inferred_groups) == 1:
             interval["naftogaz"] = {"group": inferred_groups[0]}
         elif inferred_groups:
@@ -273,7 +286,7 @@ def parse_planned_outage(text: str) -> Optional[dict]:
 
 def extract_planned_address(text: str) -> Optional[str]:
     match = re.search(
-        r"(?:споживачів\s+по|для\s+споживачів)\s+(.+?)(?:⚡|просимо|$)",
+        r"(?:споживачів\s+по|для\s+споживачів|таких\s+споживачів)\s*[:\-]?\s*(.+?)(?:⚡|просимо|$)",
         text,
         re.IGNORECASE | re.DOTALL,
     )

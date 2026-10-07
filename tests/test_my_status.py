@@ -259,3 +259,26 @@ async def test_get_my_status_unknown_operator():
         "details": [{"label": "Оператор", "value": "other"}],
         "message": "Підтримуються operator=naftogaz і operator=loe",
     }
+
+def test_my_naftogaz_status_matches_multi_group_entity_notice():
+    status = {
+        "type": "PLANNED_OUTAGE",
+        "date": "2026-08-10",
+        "intervals": [
+            {
+                "from_time": "09:00",
+                "to_time": "13:00",
+                "status": "OFF",
+                "entity_scope": "ENTITIES",
+                "entities": [
+                    {"type": "settlement", "name": "Стадники", "group": "3.1"},
+                    {"type": "residential_area", "name": "Житловий масив К1", "group": "6.1"},
+                ],
+                "naftogaz": {"groups": ["3.1", "6.1"]},
+            }
+        ],
+    }
+
+    assert build_my_naftogaz_status(status, "3.1")["has_outage"] is True
+    assert build_my_naftogaz_status(status, "6.1")["has_outage"] is True
+    assert build_my_naftogaz_status(status, "2.1")["has_outage"] is False

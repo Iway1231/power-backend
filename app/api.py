@@ -523,7 +523,10 @@ def build_my_naftogaz_status(
         matching_intervals = []
         for interval in status.get("intervals") or []:
             naftogaz = interval.get("naftogaz") or {}
-            group_match = naftogaz.get("group") == group
+            group_match = (
+                naftogaz.get("group") == group
+                or group in (naftogaz.get("groups") or [])
+            )
             if not group_match:
                 group_match = any(
                     (settlement.get("naftogaz") or {}).get("group") == group
