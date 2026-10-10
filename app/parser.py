@@ -241,8 +241,7 @@ def parse_planned_outage(text: str) -> Optional[dict]:
     address_targets = extract_address_targets(text)
     entity_targets = (
         extract_entity_targets(text)
-        if "таких споживачів" in normalized_text
-        or "такими адресами та об" in normalized_text
+        if "таких споживачів" in normalized_text or "такими адресами та об" in normalized_text
         else []
     )
     group = extract_planned_group(text)

@@ -260,6 +260,7 @@ async def test_get_my_status_unknown_operator():
         "message": "Підтримуються operator=naftogaz і operator=loe",
     }
 
+
 def test_my_naftogaz_status_matches_multi_group_entity_notice():
     status = {
         "type": "PLANNED_OUTAGE",

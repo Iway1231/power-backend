@@ -46,6 +46,8 @@ def test_planned_outage_contains_structured_addresses():
     interval = result["intervals"][0]
     assert interval["address_scope"] == "ADDRESSES"
     assert len(interval["addresses"]) == 3
+
+
 ENTITY_OUTAGE = """
 Увага! Тимчасове припинення електропостачання
 У зв’язку з проведенням планових ремонтних робіт 10.08.2026 р. з 09:00 до 13:00 буде
