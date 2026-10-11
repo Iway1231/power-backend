@@ -194,6 +194,15 @@ def get_app_config():
         "cache": {
             "loe_ttl_seconds": LOE_CACHE_TTL_SECONDS,
         },
+        "auth": {
+            "type": "api_key",
+            "header": "X-API-Key",
+            "required": config.SETTINGS.api_key_required,
+        },
+        "network": {
+            "timeout_seconds": config.SETTINGS.request_timeout_seconds,
+            "retryable_statuses": [429, 502, 503, 504],
+        },
     }
 
 

@@ -89,7 +89,7 @@ Mobile home payload:
 
 ```http
 GET /api/v1/mobile/home?operator=naftogaz&group=2.1
-GET /api/v1/mobile/home?operator=loe&city=????&street=1-??%20??????&building=1
+GET /api/v1/mobile/home?operator=loe&city=Шкло&street=1-го%20Травня&building=1
 ```
 
 Use this endpoint as the main Android screen payload. It returns a stable schema with `overall_status`, a primary electricity section, and an optional water section:
@@ -101,18 +101,18 @@ Use this endpoint as the main Android screen payload. It returns a stable schema
   "sections": [
     {
       "id": "electricity",
-      "label": "??????",
+      "label": "Електроенергія",
       "status": "ON",
       "has_outage": false,
-      "title": "?????? ??? ????",
+      "title": "Світло має бути",
       "details": []
     },
     {
       "id": "water",
-      "label": "????",
+      "label": "Вода",
       "status": "ON",
       "has_outage": false,
-      "title": "???? ??? ????",
+      "title": "Вода є",
       "details": []
     }
   ]
@@ -187,6 +187,7 @@ http://127.0.0.1:8000/openapi.json
 | `TIMEZONE` | `Europe/Kyiv` | IANA timezone name. |
 | `STATUS_CACHE_TTL_SECONDS` | `90` | Parsed status cache lifetime. |
 | `LOE_CACHE_TTL_SECONDS` | `300` | Lvivoblenergo lookup cache lifetime. |
+| `LOE_OTG_ID` | `73` | Lvivoblenergo community filter for Novoyavorivsk OTG. |
 | `REQUEST_TIMEOUT_SECONDS` | `30` | Upstream HTTP timeout. |
 | `RATE_LIMIT_REQUESTS` | `120` | Requests allowed per window and route. |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate limit window length. |
@@ -197,6 +198,10 @@ http://127.0.0.1:8000/openapi.json
 | `CORS_ORIGINS` | empty | Comma-separated allowed origins. |
 | `ALLOWED_HOSTS` | `*` | Comma-separated trusted hostnames. |
 | `DATA_DIR` | `data` | Runtime data directory. |
+
+## Android API Contract
+
+See [docs/API_CONTRACT.md](docs/API_CONTRACT.md) for the route contract, authentication, error codes, and Wi-Fi/LTE verification checklist.
 
 ## Project Structure
 

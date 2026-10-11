@@ -62,6 +62,8 @@ def test_app_config_endpoint():
     assert result["endpoints"]["naftogaz_groups"] == "/api/v1/naftogaz/groups"
     assert result["endpoints"]["loe_cities"] == "/api/v1/loe/cities"
     assert result["cache"]["loe_ttl_seconds"] == 300
+    assert result["auth"] == {"type": "api_key", "header": "X-API-Key", "required": False}
+    assert result["network"]["retryable_statuses"] == [429, 502, 503, 504]
 
 
 def test_api_v1_app_config_route():

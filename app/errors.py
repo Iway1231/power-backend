@@ -8,6 +8,16 @@ from fastapi.responses import JSONResponse
 logger = logging.getLogger(__name__)
 
 
+def error_payload(request: Request, code: str, message: str, details=None) -> dict:
+    payload = {"code": code, "message": message}
+    if details is not None:
+        payload["details"] = details
+    request_id = getattr(request.state, "request_id", None)
+    if request_id:
+        payload["request_id"] = request_id
+    return {"error": payload}
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
@@ -16,13 +26,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=422,
-            content={
-                "error": {
-                    "code": "validation_error",
-                    "message": "Request validation failed",
-                    "details": exc.errors(),
-                }
-            },
+            content=error_payload(
+                request, "validation_error", "Request validation failed", exc.errors()
+            ),
         )
 
     @app.exception_handler(httpx.HTTPError)
@@ -33,12 +39,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.warning("Upstream service request failed: %s", exc)
         return JSONResponse(
             status_code=503,
-            content={
-                "error": {
-                    "code": "upstream_unavailable",
-                    "message": "An upstream data source is temporarily unavailable",
-                }
-            },
+            content=error_payload(
+                request,
+                "upstream_unavailable",
+                "An upstream data source is temporarily unavailable",
+            ),
         )
 
     @app.exception_handler(HTTPException)
@@ -48,12 +53,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "error": {
-                    "code": "http_error",
-                    "message": exc.detail,
-                }
-            },
+            content=error_payload(request, "http_error", str(exc.detail)),
             headers=exc.headers,
         )
 
@@ -65,10 +65,5 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception("Unhandled application error")
         return JSONResponse(
             status_code=500,
-            content={
-                "error": {
-                    "code": "internal_server_error",
-                    "message": "An unexpected error occurred",
-                }
-            },
+            content=error_payload(request, "internal_server_error", "An unexpected error occurred"),
         )
