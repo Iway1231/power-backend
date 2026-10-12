@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from fastapi import APIRouter
 
 from app import config
+from app.http_retry import get_with_retry
 from app.redis_store import RedisStore
 
 WATER_CHANNEL_URL = config.WATER_CHANNEL_URL
@@ -44,8 +45,11 @@ async def fetch_water_posts(limit: int = 20) -> list[dict]:
         headers=headers,
         follow_redirects=True,
     ) as client:
-        response = await client.get(WATER_CHANNEL_URL)
-        response.raise_for_status()
+        response = await get_with_retry(
+            lambda: client.get(WATER_CHANNEL_URL),
+            retries=config.SETTINGS.upstream_retry_attempts,
+            backoff_seconds=config.SETTINGS.upstream_retry_backoff_seconds,
+        )
 
     soup = BeautifulSoup(response.text, "lxml")
     posts = []

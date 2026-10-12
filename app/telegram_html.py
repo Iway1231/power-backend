@@ -4,6 +4,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app import config
+from app.http_retry import get_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,11 @@ async def fetch_latest_posts(limit: int = 20) -> list[dict]:
         timeout=config.REQUEST_TIMEOUT_SECONDS,
         follow_redirects=True,
     ) as client:
-        response = await client.get(config.CHANNEL_URL)
-        response.raise_for_status()
+        response = await get_with_retry(
+            lambda: client.get(config.CHANNEL_URL),
+            retries=config.SETTINGS.upstream_retry_attempts,
+            backoff_seconds=config.SETTINGS.upstream_retry_backoff_seconds,
+        )
 
     soup = BeautifulSoup(response.text, "lxml")
 

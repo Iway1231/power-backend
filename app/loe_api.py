@@ -6,6 +6,7 @@ from typing import Any, Optional
 import httpx
 
 from app import config
+from app.http_retry import get_with_retry
 from app.redis_store import RedisStore, stable_key
 
 BASE_URL = "https://power-api.loe.lviv.ua/api"
@@ -63,8 +64,11 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
         async with httpx.AsyncClient(
             timeout=config.REQUEST_TIMEOUT_SECONDS,
         ) as client:
-            response = await client.get(f"{BASE_URL}/{path}", params=params, headers=headers)
-            response.raise_for_status()
+            response = await get_with_retry(
+                lambda: client.get(f"{BASE_URL}/{path}", params=params, headers=headers),
+                retries=config.SETTINGS.upstream_retry_attempts,
+                backoff_seconds=config.SETTINGS.upstream_retry_backoff_seconds,
+            )
             data = response.json()
             set_cached_loe_collection(path, params, data)
             await _redis_store.set_json(shared_key, data, LOE_CACHE_TTL_SECONDS)

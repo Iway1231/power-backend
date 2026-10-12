@@ -61,6 +61,8 @@ class Settings(BaseModel):
     loe_cache_ttl_seconds: int = Field(default=300, ge=1, le=86400)
     loe_otg_id: int = Field(default=73, ge=1)
     request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    upstream_retry_attempts: int = Field(default=2, ge=0, le=5)
+    upstream_retry_backoff_seconds: float = Field(default=0.5, ge=0, le=30)
     rate_limit_requests: int = Field(default=120, ge=1, le=10000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     redis_url: str | None = None
@@ -123,6 +125,8 @@ def load_settings() -> Settings:
         loe_cache_ttl_seconds=os.getenv("LOE_CACHE_TTL_SECONDS", "300"),
         loe_otg_id=os.getenv("LOE_OTG_ID", "73"),
         request_timeout_seconds=os.getenv("REQUEST_TIMEOUT_SECONDS", "30"),
+        upstream_retry_attempts=os.getenv("UPSTREAM_RETRY_ATTEMPTS", "2"),
+        upstream_retry_backoff_seconds=os.getenv("UPSTREAM_RETRY_BACKOFF_SECONDS", "0.5"),
         rate_limit_requests=os.getenv("RATE_LIMIT_REQUESTS", "120"),
         rate_limit_window_seconds=os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"),
         redis_url=os.getenv("REDIS_URL") or None,
