@@ -63,6 +63,7 @@ class Settings(BaseModel):
     request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     upstream_retry_attempts: int = Field(default=2, ge=0, le=5)
     upstream_retry_backoff_seconds: float = Field(default=0.5, ge=0, le=30)
+    status_refresh_timeout_seconds: float = Field(default=45.0, gt=0, le=300)
     rate_limit_requests: int = Field(default=120, ge=1, le=10000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     redis_url: str | None = None
@@ -127,6 +128,7 @@ def load_settings() -> Settings:
         request_timeout_seconds=os.getenv("REQUEST_TIMEOUT_SECONDS", "30"),
         upstream_retry_attempts=os.getenv("UPSTREAM_RETRY_ATTEMPTS", "2"),
         upstream_retry_backoff_seconds=os.getenv("UPSTREAM_RETRY_BACKOFF_SECONDS", "0.5"),
+        status_refresh_timeout_seconds=os.getenv("STATUS_REFRESH_TIMEOUT_SECONDS", "45"),
         rate_limit_requests=os.getenv("RATE_LIMIT_REQUESTS", "120"),
         rate_limit_window_seconds=os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"),
         redis_url=os.getenv("REDIS_URL") or None,

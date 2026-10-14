@@ -121,9 +121,9 @@ async def test_api_removes_downloaded_image_after_ocr_error(monkeypatch, tmp_pat
     )
     monkeypatch.setattr(api, "parse_power_text", lambda text: None)
 
-    result = await api._fetch_power_status()
+    with pytest.raises(api.StatusRefreshUnavailable):
+        await api._fetch_power_status()
 
-    assert result.type == "DAILY_STATUS"
     assert not image_path.exists()
 
 

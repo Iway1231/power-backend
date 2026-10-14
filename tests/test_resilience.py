@@ -2,8 +2,10 @@ import asyncio
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from app import api
+from app.main import app
 
 
 @pytest.mark.asyncio
@@ -109,3 +111,26 @@ async def test_power_status_restores_last_status_after_upstream_failure(monkeypa
 
     assert result.type == "GROUP_SCHEDULE"
     assert result.message == "saved"
+
+
+def test_status_route_returns_fallback_after_refresh_timeout(monkeypatch, tmp_path):
+    fallback_file = tmp_path / "last_status.json"
+    fallback_file.write_text(
+        '{"city":"Новояворівськ","operator":"Нафтогаз Тепло",'
+        '"type":"GROUP_SCHEDULE","message":"saved","groups":{},'
+        '"intervals":[],"date":"2099-01-01","updatedAt":"2099-01-01T00:00:00",'
+        '"confidence":1.0}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api, "FALLBACK_FILE", fallback_file)
+    monkeypatch.setattr(api._redis_store, "get_json", lambda key: asyncio.sleep(0, result=None))
+
+    async def timeout_fetch():
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(api, "_fetch_power_status", timeout_fetch)
+
+    response = TestClient(app).get("/api/v1/status")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "saved"

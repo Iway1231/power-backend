@@ -5,7 +5,9 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
+import weakref
 from datetime import datetime
 from typing import Annotated, Dict, List, Optional
 
@@ -53,7 +55,22 @@ API_V1_PREFIX = "/api/v1"
 
 _status_cache: Optional[dict] = None
 _status_cache_time: float = 0
-_status_refresh_lock = asyncio.Lock()
+_status_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_status_locks_guard = threading.Lock()
+
+
+class StatusRefreshUnavailable(RuntimeError):
+    pass
+
+
+def get_status_refresh_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    with _status_locks_guard:
+        lock = _status_locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            _status_locks[loop] = lock
+        return lock
 
 
 @router.get("/loe/cities", tags=["addresses"])
@@ -639,22 +656,59 @@ async def get_power_status():
     cached = await _redis_store.get_json("status:power")
     if isinstance(cached, dict):
         return PowerStatus(**cached)
-    async with _status_refresh_lock:
+
+    lock = get_status_refresh_lock()
+    try:
+        await asyncio.wait_for(
+            lock.acquire(),
+            timeout=config.SETTINGS.status_refresh_timeout_seconds,
+        )
+    except asyncio.TimeoutError as exc:
+        fallback = load_fallback_status()
+        if fallback is not None:
+            logger.warning("Serving last known power status while refresh is busy")
+            return fallback
+        raise HTTPException(status_code=503, detail="Power status refresh timed out") from exc
+
+    try:
         cached = await _redis_store.get_json("status:power")
         if isinstance(cached, dict):
             return PowerStatus(**cached)
         try:
-            result = await _fetch_power_status()
-        except httpx.HTTPError:
+            result = await asyncio.wait_for(
+                _fetch_power_status(),
+                timeout=config.SETTINGS.status_refresh_timeout_seconds,
+            )
+        except (httpx.HTTPError, asyncio.TimeoutError, StatusRefreshUnavailable) as exc:
             fallback = load_fallback_status()
             if fallback is not None:
-                logger.warning("Serving last known power status after upstream failure")
+                logger.warning("Serving last known power status after refresh failure: %s", exc)
                 return fallback
-            raise
+            if isinstance(exc, StatusRefreshUnavailable):
+                result = build_daily_status()
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Power status refresh timed out",
+                ) from exc
         await _redis_store.set_json(
             "status:power", result.model_dump(), config.STATUS_CACHE_TTL_SECONDS
         )
         return result
+    finally:
+        lock.release()
+
+
+def build_daily_status() -> PowerStatus:
+    return PowerStatus(
+        city=config.CITY_NAME,
+        operator=config.OPERATOR,
+        type="DAILY_STATUS",
+        message="Відключень не заплановано",
+        date=datetime.now().strftime("%Y-%m-%d"),
+        updatedAt=datetime.now().isoformat(),
+        confidence=1.0,
+    )
 
 
 def load_fallback_status() -> Optional[PowerStatus]:
@@ -674,10 +728,12 @@ async def _fetch_power_status():
         return PowerStatus(**_status_cache)
 
     posts = await fetch_latest_posts(limit=20)
+    valid_result = False
 
     for post in reversed(posts):
         parsed_text = parse_power_text(post.get("text", ""))
         if parsed_text:
+            valid_result = True
             if not is_planned_outage_active(parsed_text):
                 continue
             return save_status(parsed_text)
@@ -695,6 +751,7 @@ async def _fetch_power_status():
                 parsed_image = build_status_from_ocr(ocr, post.get("published_at"))
                 if not parsed_image:
                     continue
+                valid_result = True
                 if not is_group_schedule_active(parsed_image):
                     continue
 
@@ -708,15 +765,9 @@ async def _fetch_power_status():
         except Exception as e:
             logger.error("OCR error: %s", e, exc_info=True)
 
-    return PowerStatus(
-        city=config.CITY_NAME,
-        operator=config.OPERATOR,
-        type="DAILY_STATUS",
-        message="Відключень не заплановано",
-        date=datetime.now().strftime("%Y-%m-%d"),
-        updatedAt=datetime.now().isoformat(),
-        confidence=1.0,
-    )
+    if not valid_result:
+        raise StatusRefreshUnavailable("No valid status was produced by the upstream source")
+    return build_daily_status()
 
 
 @router.get("/my-status", tags=["outages"])
