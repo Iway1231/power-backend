@@ -14,6 +14,8 @@ from app.config import GROUP_ORDER
 
 logger = logging.getLogger(__name__)
 
+TESSERACT_TIMEOUT_SECONDS = 20
+
 _LOCAL_TESSERACT = Path(__file__).resolve().parent.parent / "tesseract.exe"
 if _LOCAL_TESSERACT.exists():
     pytesseract.pytesseract.tesseract_cmd = str(_LOCAL_TESSERACT)
@@ -114,7 +116,9 @@ def extract_schedule_from_image(image_path: str) -> Optional[dict]:
 def detect_no_outages(img: np.ndarray) -> bool:
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    text = pytesseract.image_to_string(gray, lang="ukr+eng", config="--psm 6").lower()
+    text = pytesseract.image_to_string(
+        gray, lang="ukr+eng", config="--psm 6", timeout=TESSERACT_TIMEOUT_SECONDS
+    ).lower()
     normalized = re.sub(r"\s+", " ", text)
     return "без стабілізаційних" in normalized and "відключень" in normalized
 
@@ -151,7 +155,9 @@ def extract_date_strict(img: np.ndarray) -> Optional[str]:
     candidates.append((wide_gray, "--psm 6"))
 
     for candidate, config in candidates:
-        raw = pytesseract.image_to_string(candidate, lang="eng", config=config)
+        raw = pytesseract.image_to_string(
+            candidate, lang="eng", config=config, timeout=TESSERACT_TIMEOUT_SECONDS
+        )
         match = re.search(r"(\d{1,2})\D+(\d{1,2})\D+(\d{4})", raw)
         if not match:
             continue
@@ -171,7 +177,9 @@ def extract_date_strict(img: np.ndarray) -> Optional[str]:
 def ocr_tile(tile: np.ndarray) -> str:
     tile = cv2.resize(tile, None, fx=2, fy=2)
     gray = cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY)
-    raw = pytesseract.image_to_string(gray, lang="ukr+eng", config="--psm 6")
+    raw = pytesseract.image_to_string(
+        gray, lang="ukr+eng", config="--psm 6", timeout=TESSERACT_TIMEOUT_SECONDS
+    )
     return raw.lower()
 
 

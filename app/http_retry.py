@@ -43,6 +43,7 @@ async def get_with_retry(
             response.raise_for_status()
             return response
 
+        await response.aclose()
         delay = _retry_after_seconds(response)
         await asyncio.sleep(delay if delay is not None else backoff_seconds * (2**attempt))
 

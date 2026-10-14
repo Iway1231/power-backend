@@ -687,17 +687,23 @@ async def _fetch_power_status():
                 continue
 
             image_path = await download_image(post["image"])
-            ocr = await asyncio.to_thread(extract_schedule_from_image, image_path)
-            if not ocr:
-                continue
+            try:
+                ocr = await asyncio.to_thread(extract_schedule_from_image, image_path)
+                if not ocr:
+                    continue
 
-            parsed_image = build_status_from_ocr(ocr, post.get("published_at"))
-            if not parsed_image:
-                continue
-            if not is_group_schedule_active(parsed_image):
-                continue
+                parsed_image = build_status_from_ocr(ocr, post.get("published_at"))
+                if not parsed_image:
+                    continue
+                if not is_group_schedule_active(parsed_image):
+                    continue
 
-            return save_status(parsed_image)
+                return save_status(parsed_image)
+            finally:
+                try:
+                    os.unlink(image_path)
+                except FileNotFoundError:
+                    pass
 
         except Exception as e:
             logger.error("OCR error: %s", e, exc_info=True)

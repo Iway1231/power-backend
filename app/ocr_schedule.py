@@ -20,6 +20,8 @@ GROUPS = [
     ["6.1", "6.2"],
 ]
 
+TESSERACT_TIMEOUT_SECONDS = 20
+
 TIME_RANGE = re.compile(r"(\d{1,2}:\d{2})\s*по\s*(\d{1,2}:\d{2})")
 
 
@@ -81,7 +83,9 @@ def ocr_cell_times(cell_img) -> List[str]:
 
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    text = pytesseract.image_to_string(thresh, lang="ukr", config="--psm 6").lower()
+    text = pytesseract.image_to_string(
+        thresh, lang="ukr", config="--psm 6", timeout=TESSERACT_TIMEOUT_SECONDS
+    ).lower()
 
     ranges = []
 
