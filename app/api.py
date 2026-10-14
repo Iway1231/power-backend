@@ -1,5 +1,6 @@
 # app/api.py
 
+import asyncio
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ import time
 from datetime import datetime
 from typing import Annotated, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 from app import config
@@ -51,6 +53,7 @@ API_V1_PREFIX = "/api/v1"
 
 _status_cache: Optional[dict] = None
 _status_cache_time: float = 0
+_status_refresh_lock = asyncio.Lock()
 
 
 @router.get("/loe/cities", tags=["addresses"])
@@ -636,9 +639,31 @@ async def get_power_status():
     cached = await _redis_store.get_json("status:power")
     if isinstance(cached, dict):
         return PowerStatus(**cached)
-    result = await _fetch_power_status()
-    await _redis_store.set_json("status:power", result.dict(), config.STATUS_CACHE_TTL_SECONDS)
-    return result
+    async with _status_refresh_lock:
+        cached = await _redis_store.get_json("status:power")
+        if isinstance(cached, dict):
+            return PowerStatus(**cached)
+        try:
+            result = await _fetch_power_status()
+        except httpx.HTTPError:
+            fallback = load_fallback_status()
+            if fallback is not None:
+                logger.warning("Serving last known power status after upstream failure")
+                return fallback
+            raise
+        await _redis_store.set_json(
+            "status:power", result.model_dump(), config.STATUS_CACHE_TTL_SECONDS
+        )
+        return result
+
+
+def load_fallback_status() -> Optional[PowerStatus]:
+    try:
+        with FALLBACK_FILE.open("r", encoding="utf-8") as file:
+            payload = json.load(file)
+        return PowerStatus(**payload)
+    except (OSError, TypeError, ValueError):
+        return None
 
 
 async def _fetch_power_status():
@@ -662,7 +687,7 @@ async def _fetch_power_status():
                 continue
 
             image_path = await download_image(post["image"])
-            ocr = extract_schedule_from_image(image_path)
+            ocr = await asyncio.to_thread(extract_schedule_from_image, image_path)
             if not ocr:
                 continue
 

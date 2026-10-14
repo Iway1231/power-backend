@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import datetime
@@ -15,6 +16,7 @@ WATER_CHANNEL_URL = config.WATER_CHANNEL_URL
 
 router = APIRouter(prefix="/water", tags=["water"])
 _redis_store = RedisStore(config.SETTINGS.redis_url, config.SETTINGS.redis_key_prefix)
+_water_refresh_lock = asyncio.Lock()
 logger = logging.getLogger(__name__)
 
 MONTHS = {
@@ -214,9 +216,13 @@ async def get_water_status():
     cached = await _redis_store.get_json("status:water")
     if isinstance(cached, dict):
         return cached
-    result = await _fetch_water_status()
-    await _redis_store.set_json("status:water", result, config.STATUS_CACHE_TTL_SECONDS)
-    return result
+    async with _water_refresh_lock:
+        cached = await _redis_store.get_json("status:water")
+        if isinstance(cached, dict):
+            return cached
+        result = await _fetch_water_status()
+        await _redis_store.set_json("status:water", result, config.STATUS_CACHE_TTL_SECONDS)
+        return result
 
 
 async def _fetch_water_status():

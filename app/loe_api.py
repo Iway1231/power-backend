@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import re
 import time
@@ -14,6 +15,7 @@ NOT_INCLUDED_TEXT = "Не входить"
 LOE_CACHE_TTL_SECONDS = config.LOE_CACHE_TTL_SECONDS
 _LOE_CACHE: dict[tuple, tuple[float, dict]] = {}
 _redis_store = RedisStore(config.SETTINGS.redis_url, config.SETTINGS.redis_key_prefix)
+_loe_refresh_lock = asyncio.Lock()
 
 
 async def fetch_loe_cities(otg_id: Optional[int] = None) -> list[dict]:
@@ -56,28 +58,37 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
         set_cached_loe_collection(path, params, shared_cached)
         return shared_cached
 
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://poweron.loe.lviv.ua/",
-    }
-    try:
-        async with httpx.AsyncClient(
-            timeout=config.REQUEST_TIMEOUT_SECONDS,
-        ) as client:
-            response = await get_with_retry(
-                lambda: client.get(f"{BASE_URL}/{path}", params=params, headers=headers),
-                retries=config.SETTINGS.upstream_retry_attempts,
-                backoff_seconds=config.SETTINGS.upstream_retry_backoff_seconds,
-            )
-            data = response.json()
-            set_cached_loe_collection(path, params, data)
-            await _redis_store.set_json(shared_key, data, LOE_CACHE_TTL_SECONDS)
-            return data
-    except httpx.HTTPError:
-        stale = get_stale_loe_collection(path, params)
-        if stale is not None:
-            return stale
-        raise
+    async with _loe_refresh_lock:
+        cached = get_cached_loe_collection(path, params)
+        if cached is not None:
+            return cached
+        shared_cached = await _redis_store.get_json(shared_key)
+        if isinstance(shared_cached, dict):
+            set_cached_loe_collection(path, params, shared_cached)
+            return shared_cached
+
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://poweron.loe.lviv.ua/",
+        }
+        try:
+            async with httpx.AsyncClient(
+                timeout=config.REQUEST_TIMEOUT_SECONDS,
+            ) as client:
+                response = await get_with_retry(
+                    lambda: client.get(f"{BASE_URL}/{path}", params=params, headers=headers),
+                    retries=config.SETTINGS.upstream_retry_attempts,
+                    backoff_seconds=config.SETTINGS.upstream_retry_backoff_seconds,
+                )
+                data = response.json()
+                set_cached_loe_collection(path, params, data)
+                await _redis_store.set_json(shared_key, data, LOE_CACHE_TTL_SECONDS)
+                return data
+        except httpx.HTTPError:
+            stale = get_stale_loe_collection(path, params)
+            if stale is not None:
+                return stale
+            raise
 
 
 def get_loe_cache_key(path: str, params: dict) -> tuple:
