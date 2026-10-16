@@ -63,6 +63,12 @@ class StatusRefreshUnavailable(RuntimeError):
     pass
 
 
+def is_status_current(status: dict | PowerStatus) -> bool:
+    """Do not serve a cached planned outage after its schedule date passed."""
+    payload = status.model_dump() if isinstance(status, PowerStatus) else status
+    return is_planned_outage_active(payload)
+
+
 def get_status_refresh_lock() -> asyncio.Lock:
     loop = asyncio.get_running_loop()
     with _status_locks_guard:
@@ -654,7 +660,7 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
 @router.get("/status", response_model=PowerStatus, tags=["outages"])
 async def get_power_status():
     cached = await _redis_store.get_json("status:power")
-    if isinstance(cached, dict):
+    if isinstance(cached, dict) and is_status_current(cached):
         return PowerStatus(**cached)
 
     lock = get_status_refresh_lock()
@@ -672,7 +678,7 @@ async def get_power_status():
 
     try:
         cached = await _redis_store.get_json("status:power")
-        if isinstance(cached, dict):
+        if isinstance(cached, dict) and is_status_current(cached):
             return PowerStatus(**cached)
         try:
             result = await asyncio.wait_for(
@@ -681,7 +687,7 @@ async def get_power_status():
             )
         except (httpx.HTTPError, asyncio.TimeoutError, StatusRefreshUnavailable) as exc:
             fallback = load_fallback_status()
-            if fallback is not None:
+            if fallback is not None and is_status_current(fallback):
                 logger.warning("Serving last known power status after refresh failure: %s", exc)
                 return fallback
             if isinstance(exc, StatusRefreshUnavailable):
@@ -724,7 +730,11 @@ async def _fetch_power_status():
     global _status_cache, _status_cache_time
 
     now = time.time()
-    if _status_cache and (now - _status_cache_time) < config.STATUS_CACHE_TTL_SECONDS:
+    if (
+        _status_cache
+        and (now - _status_cache_time) < config.STATUS_CACHE_TTL_SECONDS
+        and is_status_current(_status_cache)
+    ):
         return PowerStatus(**_status_cache)
 
     posts = await fetch_latest_posts(limit=20)

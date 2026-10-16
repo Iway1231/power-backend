@@ -113,6 +113,42 @@ async def test_power_status_restores_last_status_after_upstream_failure(monkeypa
     assert result.message == "saved"
 
 
+@pytest.mark.asyncio
+async def test_power_status_ignores_expired_planned_outage_in_redis(monkeypatch):
+    stale = {
+        "city": "Новояворівськ",
+        "operator": "Нафтогаз Тепло",
+        "type": "PLANNED_OUTAGE",
+        "message": "expired",
+        "groups": None,
+        "intervals": [{"from_time": "11:00", "to_time": "12:00", "status": "OFF"}],
+        "date": "2026-10-16",
+        "updatedAt": "2026-10-16T21:11:57",
+        "confidence": 1.0,
+    }
+    monkeypatch.setattr(
+        api._redis_store,
+        "get_json",
+        lambda key: asyncio.sleep(0, result=stale),
+    )
+    monkeypatch.setattr(api._redis_store, "set_json", lambda *args: asyncio.sleep(0))
+    refreshed = api.PowerStatus(
+        city="Новояворівськ",
+        operator="Нафтогаз Тепло",
+        type="DAILY_STATUS",
+        message="current",
+        date="2026-10-17",
+        confidence=1.0,
+    )
+    monkeypatch.setattr(api, "_fetch_power_status", lambda: asyncio.sleep(0, result=refreshed))
+    monkeypatch.setattr(api, "is_planned_outage_active", lambda value: value.get("date") == "2026-10-17")
+
+    result = await api.get_power_status()
+
+    assert result.type == "DAILY_STATUS"
+    assert result.message == "current"
+
+
 def test_status_route_returns_fallback_after_refresh_timeout(monkeypatch, tmp_path):
     fallback_file = tmp_path / "last_status.json"
     fallback_file.write_text(
