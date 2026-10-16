@@ -1,3 +1,4 @@
+import app.address_matching as address_matching
 from app.address_matching import address_matches, extract_address_targets, extract_entity_targets
 from app.parser import parse_power_text
 
@@ -75,3 +76,37 @@ def test_planned_outage_assigns_all_entity_groups():
     assert interval["entity_scope"] == "ENTITIES"
     assert {item["group"] for item in interval["entities"]} == {"3.1", "6.1"}
     assert interval["naftogaz"] == {"groups": ["3.1", "6.1"]}
+
+
+def test_extract_entity_targets_normalizes_residential_area_aliases(monkeypatch):
+    addresses = [
+        {
+            "type": "residential_area",
+            "name": "Житловий масив «Дачі»",
+            "group": "1.2",
+        },
+        {
+            "type": "residential_area",
+            "name": "Житловий масив «Дачі 2»",
+            "group": "1.2",
+        },
+        {
+            "type": "residential_area",
+            "name": "Житловий масив «Гірник»",
+            "group": "1.2",
+        },
+        {"type": "residential_area", "name": "ж/м «Нафтуся»", "group": "1.2"},
+    ]
+    monkeypatch.setattr(address_matching, "list_naftogaz_addresses", lambda: addresses)
+
+    assert extract_entity_targets("ж/м «Дачі»") == [addresses[0]]
+    assert extract_entity_targets("Житловий масив «Дачі 2»") == [addresses[1]]
+    assert extract_entity_targets("Житловий масив «Гірник»") == [addresses[2]]
+    assert extract_entity_targets("ж/м «Нафтуся»") == [addresses[3]]
+
+
+def test_extract_entity_targets_does_not_match_partial_settlement(monkeypatch):
+    addresses = [{"type": "settlement", "name": "Ліс", "group": "1.2"}]
+    monkeypatch.setattr(address_matching, "list_naftogaz_addresses", lambda: addresses)
+
+    assert extract_entity_targets("Сивліс") == []

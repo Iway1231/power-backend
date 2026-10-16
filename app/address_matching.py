@@ -105,15 +105,38 @@ def extract_entity_targets(text: str) -> list[dict]:
         return []
 
     normalized_text = normalize_name(text)
-    targets: list[dict] = []
-    for address in list_naftogaz_addresses():
+    normalized_text = re.sub(r"\bж\s+м\s+", "", normalized_text)
+
+    addresses = list(list_naftogaz_addresses())
+    candidates: list[tuple[int, int, int]] = []
+    for index, address in enumerate(addresses):
         if address.get("type") not in {"settlement", "residential_area"}:
             continue
-        name = address.get("name") or ""
-        if normalize_name(name) not in normalized_text:
+
+        name = normalize_name(address.get("name") or "")
+        name = re.sub(r"^(?:житловий масив|ж\s+м)\s+", "", name).strip()
+        if not name:
             continue
-        targets.append({"type": address["type"], "name": name, "group": address["group"]})
-    return targets
+
+        pattern = r"(?<!\w)" + re.escape(name) + r"(?!\w)"
+        candidates.extend(
+            (match.start(), match.end(), index)
+            for match in re.finditer(pattern, normalized_text)
+        )
+
+    # Prefer the longest match when names overlap, e.g. "Дачі 2" over "Дачі".
+    selected: list[tuple[int, int, int]] = []
+    for candidate in sorted(candidates, key=lambda item: (-(item[1] - item[0]), item[0])):
+        if any(candidate[0] < end and start < candidate[1] for start, end, _ in selected):
+            continue
+        selected.append(candidate)
+
+    selected_indexes = {index for _, _, index in selected}
+    return [
+        {"type": address["type"], "name": address.get("name") or "", "group": address["group"]}
+        for index, address in enumerate(addresses)
+        if index in selected_indexes
+    ]
 
 
 def address_matches(
