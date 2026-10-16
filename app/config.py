@@ -60,7 +60,7 @@ class Settings(BaseModel):
     status_cache_ttl_seconds: int = Field(default=90, ge=1, le=3600)
     loe_cache_ttl_seconds: int = Field(default=300, ge=1, le=86400)
     loe_otg_id: int = Field(default=73, ge=1)
-    request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    request_timeout_seconds: float = Field(default=90.0, gt=0, le=120)
     upstream_retry_attempts: int = Field(default=2, ge=0, le=5)
     upstream_retry_backoff_seconds: float = Field(default=0.5, ge=0, le=30)
     status_refresh_timeout_seconds: float = Field(default=45.0, gt=0, le=300)
@@ -125,7 +125,7 @@ def load_settings() -> Settings:
         status_cache_ttl_seconds=os.getenv("STATUS_CACHE_TTL_SECONDS", "90"),
         loe_cache_ttl_seconds=os.getenv("LOE_CACHE_TTL_SECONDS", "300"),
         loe_otg_id=os.getenv("LOE_OTG_ID", "73"),
-        request_timeout_seconds=os.getenv("REQUEST_TIMEOUT_SECONDS", "30"),
+        request_timeout_seconds=os.getenv("REQUEST_TIMEOUT_SECONDS", "90"),
         upstream_retry_attempts=os.getenv("UPSTREAM_RETRY_ATTEMPTS", "2"),
         upstream_retry_backoff_seconds=os.getenv("UPSTREAM_RETRY_BACKOFF_SECONDS", "0.5"),
         status_refresh_timeout_seconds=os.getenv("STATUS_REFRESH_TIMEOUT_SECONDS", "45"),
