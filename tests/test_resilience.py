@@ -52,6 +52,39 @@ async def test_power_status_runs_ocr_outside_event_loop(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_concurrent_refreshes_do_not_run_ocr_in_parallel(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def fake_to_thread(function, *args):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return {
+            "type": "GROUP_SCHEDULE",
+            "date": "2099-01-01",
+            "groups": {"1.1": {"status": "OFF", "outages": ["08:00-12:00"]}},
+            "intervals": [],
+            "message": "test",
+            "confidence": 1.0,
+        }
+
+    monkeypatch.setattr(api.asyncio, "to_thread", fake_to_thread)
+
+    first = asyncio.create_task(api.extract_schedule_with_gate("first.jpg"))
+    await started.wait()
+    second = await api.extract_schedule_with_gate("second.jpg")
+    release.set()
+    result = await first
+
+    assert result["type"] == "GROUP_SCHEDULE"
+    assert second is None
+    assert calls == 1
+
+
+@pytest.mark.asyncio
 async def test_concurrent_power_refreshes_share_one_result(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "_status_cache", None)
     monkeypatch.setattr(api, "_status_cache_time", 0)
@@ -141,7 +174,9 @@ async def test_power_status_ignores_expired_planned_outage_in_redis(monkeypatch)
         confidence=1.0,
     )
     monkeypatch.setattr(api, "_fetch_power_status", lambda: asyncio.sleep(0, result=refreshed))
-    monkeypatch.setattr(api, "is_planned_outage_active", lambda value: value.get("date") == "2026-10-17")
+    monkeypatch.setattr(
+        api, "is_planned_outage_active", lambda value: value.get("date") == "2026-10-17"
+    )
 
     result = await api.get_power_status()
 
