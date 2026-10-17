@@ -20,7 +20,7 @@ services:
       DATA_DIR: /app/data
       REDIS_URL: redis://redis:6379/0
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - power_data:/app/data
     healthcheck:

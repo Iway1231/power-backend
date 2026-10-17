@@ -19,6 +19,9 @@ def test_app():
     from app.main import create_app
 
     settings = SETTINGS.model_copy(
-        update={"environment": "test", "allowed_hosts": ["testserver", "localhost", "127.0.0.1"]}
+        update={
+            "environment": "test",
+            "allowed_hosts": ["testserver", "localhost", "127.0.0.1"],
+        }
     )
     return create_app(settings)

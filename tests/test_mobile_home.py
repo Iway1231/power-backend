@@ -2,9 +2,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import build_mobile_home_response, get_mobile_home
-from app.main import app
 
-client = TestClient(app)
+
+@pytest.fixture
+def client(test_app):
+    return TestClient(test_app)
 
 
 def test_build_mobile_home_response_for_electricity_and_water():
@@ -108,7 +110,7 @@ async def test_get_mobile_home_can_skip_water(monkeypatch):
     assert [section["id"] for section in result["sections"]] == ["electricity"]
 
 
-def test_mobile_home_route_validates_operator_length():
+def test_mobile_home_route_validates_operator_length(client):
     response = client.get("/api/v1/mobile/home?operator=x")
 
     assert response.status_code == 422
