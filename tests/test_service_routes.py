@@ -1,15 +1,16 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import get_app_bootstrap, get_app_config, get_cache_status, get_health
 from app.loe_api import clear_loe_cache, get_loe_cache_status, set_cached_loe_collection
-from app.main import app
-
-client = TestClient(app)
 
 
-def test_health_endpoint():
+@pytest.fixture
+def client(test_app):
+    return TestClient(test_app)
+@pytest.mark.asyncio
+async def test_health_endpoint():
     result = get_health()
-
     assert result["status"] == "ok"
     assert result["service"] == "power-backend"
     assert result["time"]
@@ -66,7 +67,7 @@ def test_app_config_endpoint():
     assert result["network"]["retryable_statuses"] == [429, 502, 503, 504]
 
 
-def test_api_v1_app_config_route():
+def test_api_v1_app_config_route(client):
     response = client.get("/api/v1/app/config")
 
     assert response.status_code == 200
@@ -82,7 +83,7 @@ def test_app_bootstrap_endpoint():
     assert result["naftogaz_groups"][0]["id"] == "1.1"
 
 
-def test_api_v1_app_bootstrap_route():
+def test_api_v1_app_bootstrap_route(client):
     response = client.get("/api/v1/app/bootstrap")
 
     assert response.status_code == 200
