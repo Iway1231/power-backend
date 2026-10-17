@@ -8,8 +8,9 @@ import tempfile
 import threading
 import time
 import weakref
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -468,6 +469,7 @@ def build_mobile_section(
         "date": status.get("date"),
         "outages": status.get("outages") or [],
         "intervals": status.get("intervals") or [],
+        "active_intervals": status.get("active_intervals") or [],
         "source_available": source_available,
         "source": status,
     }
@@ -677,13 +679,18 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
     }
 
 
-def apply_loe_schedule(status: dict, schedule: dict) -> dict:
+def apply_loe_schedule(status: dict, schedule: dict, now: Optional[datetime] = None) -> dict:
     """Add the official LOE group schedule while preserving address status."""
     group = (status.get("loe") or {}).get("gpv")
-    intervals = (schedule.get("groups") or {}).get(group, []) if group else []
+    planned_intervals = (schedule.get("groups") or {}).get(group, []) if group else []
+    active_intervals = [
+        interval
+        for interval in planned_intervals
+        if is_loe_interval_active(schedule.get("date"), interval, now=now)
+    ]
     has_outage = status.get("has_outage")
     if has_outage is not True:
-        has_outage = bool(intervals)
+        has_outage = bool(active_intervals)
 
     status = dict(status)
     status.update(
@@ -692,18 +699,54 @@ def apply_loe_schedule(status: dict, schedule: dict) -> dict:
             "status": "OFF" if has_outage else "ON",
             "title": "Зараз є відключення" if has_outage else "Світло має бути",
             "subtitle": (
-                f"Група {group}: {', '.join(intervals)}"
-                if group and intervals
+                f"Група {group}: {', '.join(active_intervals if has_outage else planned_intervals)}"
+                if group and (active_intervals if has_outage else planned_intervals)
                 else status.get("subtitle") or "Для групи графік не знайдено"
             ),
             "date": schedule.get("date"),
-            "outages": intervals,
-            "intervals": intervals,
+            "outages": planned_intervals,
+            "intervals": planned_intervals,
+            "active_intervals": active_intervals,
             "schedule_source": schedule.get("source_url"),
             "schedule_updated_at": schedule.get("updated_at"),
         }
     )
     return status
+
+
+def is_loe_interval_active(
+    date: Optional[str], interval: str, now: Optional[datetime] = None
+) -> bool:
+    """Return whether an LOE interval is active in the Kyiv local timezone."""
+    if not date or "-" not in interval:
+        return False
+
+    try:
+        start_text, end_text = interval.split("-", 1)
+        start_at = datetime.fromisoformat(f"{date}T{start_text}:00")
+        end_at = datetime.fromisoformat(f"{date}T{end_text}:00")
+    except (TypeError, ValueError):
+        return False
+
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+
+    try:
+        timezone = ZoneInfo(config.TIMEZONE)
+    except ZoneInfoNotFoundError:
+        timezone = None
+
+    current = now or (datetime.now(timezone) if timezone else datetime.now())
+    if timezone:
+        start_at = start_at.replace(tzinfo=timezone)
+        end_at = end_at.replace(tzinfo=timezone)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone)
+        else:
+            current = current.astimezone(timezone)
+    elif current.tzinfo is not None:
+        current = current.replace(tzinfo=None)
+    return start_at <= current < end_at
 
 
 @router.get("/status", response_model=PowerStatus, tags=["outages"])

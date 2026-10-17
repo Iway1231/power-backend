@@ -9,6 +9,7 @@ from app.api import (
     build_my_naftogaz_status,
     get_my_status,
     is_group_schedule_active,
+    is_loe_interval_active,
 )
 
 
@@ -175,12 +176,52 @@ def test_my_loe_status_applies_official_group_schedule():
             "source_url": "https://poweron.loe.lviv.ua/",
             "groups": {"2.2": ["11:00-14:00"]},
         },
+        now=datetime(2026, 10, 17, 12, 0),
     )
 
     assert result["has_outage"] is True
     assert result["status"] == "OFF"
     assert result["outages"] == ["11:00-14:00"]
     assert result["date"] == "2026-10-17"
+
+
+def test_loe_schedule_is_inactive_before_interval():
+    assert not is_loe_interval_active(
+        "2026-10-17", "18:00-22:00", now=datetime(2026, 10, 17, 17, 59)
+    )
+
+
+def test_loe_schedule_is_active_during_interval():
+    assert is_loe_interval_active("2026-10-17", "18:00-22:00", now=datetime(2026, 10, 17, 19, 0))
+
+
+def test_loe_schedule_is_inactive_after_interval():
+    assert not is_loe_interval_active(
+        "2026-10-17", "18:00-22:00", now=datetime(2026, 10, 17, 22, 0)
+    )
+
+
+def test_apply_loe_schedule_keeps_plan_but_reports_current_state():
+    status = build_my_loe_status(
+        {
+            "city": "Новояворівськ",
+            "street": "Автомобіліст",
+            "building": "8",
+            "loe": {"gpv": "2.2"},
+            "disconnection_task": False,
+            "planned_replace_counter": False,
+        }
+    )
+    schedule = {"date": "2026-10-17", "groups": {"2.2": ["18:00-22:00"]}}
+
+    before = apply_loe_schedule(status, schedule, now=datetime(2026, 10, 17, 17, 59))
+    after = apply_loe_schedule(status, schedule, now=datetime(2026, 10, 17, 22, 0))
+
+    assert before["status"] == "ON"
+    assert before["active_intervals"] == []
+    assert before["intervals"] == ["18:00-22:00"]
+    assert after["status"] == "ON"
+    assert after["active_intervals"] == []
 
 
 def test_my_loe_status_uses_disconnection_task_as_outage():
