@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 
 from app.api import (
+    apply_loe_schedule,
     build_group_state,
     build_my_loe_status,
     build_my_naftogaz_status,
@@ -152,6 +153,34 @@ def test_my_loe_status_returns_address_groups():
         "disconnection_task": False,
         "planned_replace_counter": False,
     }
+
+
+def test_my_loe_status_applies_official_group_schedule():
+    status = build_my_loe_status(
+        {
+            "city": "Новояворівськ",
+            "street": "Автомобіліст",
+            "building": "8",
+            "loe": {"gpv": "2.2"},
+            "disconnection_task": False,
+            "planned_replace_counter": False,
+        }
+    )
+
+    result = apply_loe_schedule(
+        status,
+        {
+            "date": "2026-10-17",
+            "updated_at": "10:59 17.10.2026",
+            "source_url": "https://poweron.loe.lviv.ua/",
+            "groups": {"2.2": ["11:00-14:00"]},
+        },
+    )
+
+    assert result["has_outage"] is True
+    assert result["status"] == "OFF"
+    assert result["outages"] == ["11:00-14:00"]
+    assert result["date"] == "2026-10-17"
 
 
 def test_my_loe_status_uses_disconnection_task_as_outage():
