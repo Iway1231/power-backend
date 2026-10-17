@@ -34,6 +34,7 @@ from app.loe_api import (
     item_names,
     lookup_loe_address,
 )
+from app.loe_schedule import evaluate_group_schedule, fetch_loe_schedule
 from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
@@ -634,7 +635,9 @@ def build_my_naftogaz_status(
     }
 
 
-def build_my_loe_status(lookup: Optional[dict]) -> dict:
+def build_my_loe_status(
+    lookup: Optional[dict], schedule: Optional[dict] = None, now: Optional[datetime] = None
+) -> dict:
     if not lookup:
         return {
             "operator": "loe",
@@ -659,6 +662,35 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
 
     has_outage = bool(lookup.get("disconnection_task"))
     loe = lookup.get("loe")
+    group = loe.get("gpv") if isinstance(loe, dict) else None
+    if schedule is not None and group:
+        evaluated = evaluate_group_schedule(schedule, group, now=now)
+        if evaluated["status"] != "UNKNOWN":
+            emergency = bool(lookup.get("disconnection_task"))
+            active = emergency or evaluated["status"] == "OFF"
+            return {
+                "operator": "loe",
+                "city": lookup.get("city"),
+                "street": lookup.get("street"),
+                "building": lookup.get("building"),
+                "group": group,
+                **evaluated,
+                "has_outage": active,
+                "status": "OFF" if active else "ON",
+                "title": "Є активне відключення" if active else "Світло має бути",
+                "subtitle": f"Група {group}: {', '.join(evaluated['outages'])}"
+                if evaluated["outages"]
+                else f"Для групи {group} відключень не заплановано",
+                "details": build_loe_details(loe),
+                "message": "Є активне відключення"
+                if active
+                else "За графіком відключень не заплановано",
+                "loe": loe,
+                "disconnection_task": lookup.get("disconnection_task"),
+                "planned_replace_counter": lookup.get("planned_replace_counter"),
+                "date": schedule.get("date"),
+                "source_type": schedule.get("type"),
+            }
     return {
         "operator": "loe",
         "city": lookup.get("city"),
@@ -839,7 +871,11 @@ async def get_my_status(
             )
 
         lookup = await lookup_loe_address(city, street, building, debug=True)
-        return build_my_loe_status(lookup)
+        try:
+            schedule = await fetch_loe_schedule()
+        except (httpx.HTTPError, OSError, ValueError):
+            schedule = None
+        return build_my_loe_status(lookup, schedule=schedule)
 
     return build_personal_status_error(
         operator,

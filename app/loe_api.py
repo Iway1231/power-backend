@@ -80,7 +80,7 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
                     retries=config.SETTINGS.upstream_retry_attempts,
                     backoff_seconds=config.SETTINGS.upstream_retry_backoff_seconds,
                 )
-                data = response.json()
+                data = normalize_loe_collection(response.json())
                 set_cached_loe_collection(path, params, data)
                 await _redis_store.set_json(shared_key, data, LOE_CACHE_TTL_SECONDS)
                 return data
@@ -89,6 +89,22 @@ async def fetch_loe_collection(path: str, params: dict) -> dict:
             if stale is not None:
                 return stale
             raise
+
+
+def normalize_loe_collection(data: Any) -> dict:
+    """Normalize both current API arrays and legacy Hydra collections.
+
+    The live power-api endpoint currently returns a JSON array for
+    ``pw_cities``, ``pw_streets`` and ``pw_accounts``. Older deployments
+    returned a Hydra object. Keeping one internal shape prevents the address
+    lookup flow from silently returning empty lists when the upstream format
+    changes.
+    """
+    if isinstance(data, list):
+        return {"hydra:member": data}
+    if isinstance(data, dict):
+        return data
+    raise ValueError("Unexpected Львівобленерго collection response")
 
 
 def get_loe_cache_key(path: str, params: dict) -> tuple:

@@ -11,6 +11,7 @@ from app.loe_api import (
     find_named_item,
     get_cached_loe_collection,
     get_stale_loe_collection,
+    normalize_loe_collection,
     parse_loe_account,
     set_cached_loe_collection,
 )
@@ -39,6 +40,12 @@ def test_parse_loe_account_groups():
         },
         "disconnection_task": False,
         "planned_replace_counter": False,
+    }
+
+
+def test_live_loe_collections_can_be_plain_json_arrays():
+    assert normalize_loe_collection([{"id": 1053, "name": "Шкло"}]) == {
+        "hydra:member": [{"id": 1053, "name": "Шкло"}]
     }
 
 
