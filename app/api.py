@@ -34,6 +34,7 @@ from app.loe_api import (
     item_names,
     lookup_loe_address,
 )
+from app.loe_schedule import fetch_loe_schedule
 from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
@@ -676,6 +677,35 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
     }
 
 
+def apply_loe_schedule(status: dict, schedule: dict) -> dict:
+    """Add the official LOE group schedule while preserving address status."""
+    group = (status.get("loe") or {}).get("gpv")
+    intervals = (schedule.get("groups") or {}).get(group, []) if group else []
+    has_outage = status.get("has_outage")
+    if has_outage is not True:
+        has_outage = bool(intervals)
+
+    status = dict(status)
+    status.update(
+        {
+            "has_outage": has_outage,
+            "status": "OFF" if has_outage else "ON",
+            "title": "Зараз є відключення" if has_outage else "Світло має бути",
+            "subtitle": (
+                f"Група {group}: {', '.join(intervals)}"
+                if group and intervals
+                else status.get("subtitle") or "Для групи графік не знайдено"
+            ),
+            "date": schedule.get("date"),
+            "outages": intervals,
+            "intervals": intervals,
+            "schedule_source": schedule.get("source_url"),
+            "schedule_updated_at": schedule.get("updated_at"),
+        }
+    )
+    return status
+
+
 @router.get("/status", response_model=PowerStatus, tags=["outages"])
 async def get_power_status():
     cached = await _redis_store.get_json("status:power")
@@ -839,7 +869,13 @@ async def get_my_status(
             )
 
         lookup = await lookup_loe_address(city, street, building, debug=True)
-        return build_my_loe_status(lookup)
+        status = build_my_loe_status(lookup)
+        if lookup and not lookup.get("error"):
+            try:
+                status = apply_loe_schedule(status, await fetch_loe_schedule())
+            except (httpx.HTTPError, asyncio.TimeoutError) as exc:
+                logger.warning("LOE schedule unavailable: %s", exc)
+        return status
 
     return build_personal_status_error(
         operator,
