@@ -2,8 +2,9 @@
 
 import re
 import time
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from bs4 import BeautifulSoup
@@ -90,6 +91,27 @@ def parse_loe_schedule(html: str) -> dict:
         "updated_at": updated_at,
         "groups": groups,
     }
+
+
+def is_loe_schedule_current(schedule_date: Optional[str], now: Optional[datetime] = None) -> bool:
+    """Return whether the published schedule is for the current local day."""
+    if not schedule_date:
+        return False
+
+    try:
+        published_date = date.fromisoformat(schedule_date)
+    except ValueError:
+        return False
+
+    try:
+        timezone = ZoneInfo(config.TIMEZONE)
+    except ZoneInfoNotFoundError:
+        timezone = None
+
+    current = now or (datetime.now(timezone) if timezone else datetime.now())
+    if timezone and current.tzinfo is not None:
+        current = current.astimezone(timezone)
+    return published_date == current.date()
 
 
 def clear_loe_schedule_cache() -> None:

@@ -35,7 +35,7 @@ from app.loe_api import (
     item_names,
     lookup_loe_address,
 )
-from app.loe_schedule import fetch_loe_schedule
+from app.loe_schedule import fetch_loe_schedule, is_loe_schedule_current
 from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
@@ -682,22 +682,36 @@ def build_my_loe_status(lookup: Optional[dict]) -> dict:
 def apply_loe_schedule(status: dict, schedule: dict, now: Optional[datetime] = None) -> dict:
     """Add the official LOE group schedule while preserving address status."""
     group = (status.get("loe") or {}).get("gpv")
-    planned_intervals = (schedule.get("groups") or {}).get(group, []) if group else []
+    schedule_groups = schedule.get("groups") or {}
+    group_found = bool(group and isinstance(schedule_groups, dict) and group in schedule_groups)
+    schedule_current = is_loe_schedule_current(schedule.get("date"), now=now)
+    schedule_usable = schedule_current and group_found
+    planned_intervals = schedule_groups.get(group, []) if group_found else []
     active_intervals = [
         interval
         for interval in planned_intervals
-        if is_loe_interval_active(schedule.get("date"), interval, now=now)
+        if schedule_usable and is_loe_interval_active(schedule.get("date"), interval, now=now)
     ]
-    has_outage = status.get("has_outage")
-    if has_outage is not True:
+    emergency_outage = status.get("has_outage") is True
+    if emergency_outage:
+        has_outage = True
+        current_status = "OFF"
+        title = status.get("title") or "Є активне відключення"
+    elif schedule_usable:
         has_outage = bool(active_intervals)
+        current_status = "OFF" if has_outage else "ON"
+        title = "Зараз є відключення" if has_outage else "Світло має бути"
+    else:
+        has_outage = None
+        current_status = "UNKNOWN"
+        title = "Графік не підтверджено"
 
     status = dict(status)
     status.update(
         {
             "has_outage": has_outage,
-            "status": "OFF" if has_outage else "ON",
-            "title": "Зараз є відключення" if has_outage else "Світло має бути",
+            "status": current_status,
+            "title": title,
             "subtitle": (
                 f"Група {group}: {', '.join(active_intervals if has_outage else planned_intervals)}"
                 if group and (active_intervals if has_outage else planned_intervals)
