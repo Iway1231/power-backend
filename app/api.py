@@ -57,6 +57,7 @@ _status_cache: Optional[dict] = None
 _status_cache_time: float = 0
 _status_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _status_locks_guard = threading.Lock()
+_ocr_gate = threading.Lock()
 
 
 class StatusRefreshUnavailable(RuntimeError):
@@ -77,6 +78,24 @@ def get_status_refresh_lock() -> asyncio.Lock:
             lock = asyncio.Lock()
             _status_locks[loop] = lock
         return lock
+
+
+async def extract_schedule_with_gate(image_path: str) -> Optional[dict]:
+    """Run at most one OCR process per API process.
+
+    OCR is CPU-heavy and can run across event loops when the application is
+    exercised by multiple clients or test workers. A non-blocking thread lock
+    prevents a second Tesseract process from increasing CPU pressure; callers
+    already have the normal cached-status fallback when OCR is busy.
+    """
+    if not _ocr_gate.acquire(blocking=False):
+        logger.warning("Skipping OCR while another OCR task is running")
+        return None
+
+    try:
+        return await asyncio.to_thread(extract_schedule_from_image, image_path)
+    finally:
+        _ocr_gate.release()
 
 
 @router.get("/loe/cities", tags=["addresses"])
@@ -754,7 +773,7 @@ async def _fetch_power_status():
 
             image_path = await download_image(post["image"])
             try:
-                ocr = await asyncio.to_thread(extract_schedule_from_image, image_path)
+                ocr = await extract_schedule_with_gate(image_path)
                 if not ocr:
                     continue
 
