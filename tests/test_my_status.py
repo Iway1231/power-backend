@@ -11,6 +11,7 @@ from app.api import (
     is_group_schedule_active,
     is_loe_interval_active,
 )
+from app.loe_schedule import is_loe_schedule_current, parse_loe_schedule
 
 
 def test_my_naftogaz_status_for_group_schedule_outage():
@@ -222,6 +223,72 @@ def test_apply_loe_schedule_keeps_plan_but_reports_current_state():
     assert before["intervals"] == ["18:00-22:00"]
     assert after["status"] == "ON"
     assert after["active_intervals"] == []
+
+
+def test_empty_loe_parser_response_does_not_confirm_power():
+    status = build_my_loe_status({"loe": {"gpv": "2.2"}, "disconnection_task": False})
+
+    result = apply_loe_schedule(
+        status,
+        parse_loe_schedule("<html><body><p>неповна відповідь</p></body></html>"),
+        now=datetime(2026, 10, 17, 12, 0),
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["has_outage"] is None
+    assert result["active_intervals"] == []
+
+
+def test_loe_schedule_without_date_does_not_confirm_power():
+    status = build_my_loe_status({"loe": {"gpv": "2.2"}, "disconnection_task": False})
+
+    result = apply_loe_schedule(
+        status,
+        {"groups": {"2.2": ["11:00-14:00"]}},
+        now=datetime(2026, 10, 17, 12, 0),
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["has_outage"] is None
+    assert result["intervals"] == ["11:00-14:00"]
+    assert result["active_intervals"] == []
+
+
+def test_stale_loe_schedule_does_not_confirm_power():
+    status = build_my_loe_status({"loe": {"gpv": "2.2"}, "disconnection_task": False})
+
+    result = apply_loe_schedule(
+        status,
+        {"date": "2026-10-16", "groups": {"2.2": ["11:00-14:00"]}},
+        now=datetime(2026, 10, 17, 12, 0),
+    )
+
+    assert not is_loe_schedule_current("2026-10-16", datetime(2026, 10, 17, 12, 0))
+    assert result["status"] == "UNKNOWN"
+    assert result["has_outage"] is None
+
+
+def test_missing_loe_group_does_not_confirm_power():
+    status = build_my_loe_status({"loe": {"gpv": "2.2"}, "disconnection_task": False})
+
+    result = apply_loe_schedule(
+        status,
+        {"date": "2026-10-17", "groups": {"1.1": ["11:00-14:00"]}},
+        now=datetime(2026, 10, 17, 12, 0),
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["has_outage"] is None
+    assert result["intervals"] == []
+
+
+def test_emergency_loe_outage_survives_invalid_schedule():
+    status = build_my_loe_status({"loe": {"gpv": "2.2"}, "disconnection_task": True})
+
+    result = apply_loe_schedule(status, {}, now=datetime(2026, 10, 17, 12, 0))
+
+    assert result["status"] == "OFF"
+    assert result["has_outage"] is True
 
 
 def test_my_loe_status_uses_disconnection_task_as_outage():
