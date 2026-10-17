@@ -123,8 +123,7 @@ def extract_entity_targets(text: str) -> list[dict]:
 
         pattern = r"(?<!\w)" + re.escape(name) + r"(?!\w)"
         candidates.extend(
-            (match.start(), match.end(), index)
-            for match in re.finditer(pattern, normalized_text)
+            (match.start(), match.end(), index) for match in re.finditer(pattern, normalized_text)
         )
 
     # Prefer the longest match when names overlap, e.g. "Дачі 2" over "Дачі".
@@ -133,10 +132,7 @@ def extract_entity_targets(text: str) -> list[dict]:
         candidates,
         key=lambda item: (-(item[1] - item[0]), item[0]),
     ):
-        if any(
-            candidate[0] < end and start < candidate[1]
-            for start, end, _ in selected
-        ):
+        if any(candidate[0] < end and start < candidate[1] for start, end, _ in selected):
             continue
         selected.append(candidate)
 
@@ -150,6 +146,7 @@ def extract_entity_targets(text: str) -> list[dict]:
         for index, address in enumerate(addresses)
         if index in selected_indexes
     ]
+
 
 def address_matches(
     target: dict,

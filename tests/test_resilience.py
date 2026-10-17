@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import api
-from app.main import app
 
 
 @pytest.mark.asyncio
@@ -141,7 +140,9 @@ async def test_power_status_ignores_expired_planned_outage_in_redis(monkeypatch)
         confidence=1.0,
     )
     monkeypatch.setattr(api, "_fetch_power_status", lambda: asyncio.sleep(0, result=refreshed))
-    monkeypatch.setattr(api, "is_planned_outage_active", lambda value: value.get("date") == "2026-10-17")
+    monkeypatch.setattr(
+        api, "is_planned_outage_active", lambda value: value.get("date") == "2026-10-17"
+    )
 
     result = await api.get_power_status()
 

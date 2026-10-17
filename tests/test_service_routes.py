@@ -8,6 +8,8 @@ from app.loe_api import clear_loe_cache, get_loe_cache_status, set_cached_loe_co
 @pytest.fixture
 def client(test_app):
     return TestClient(test_app)
+
+
 @pytest.mark.asyncio
 async def test_health_endpoint():
     result = get_health()

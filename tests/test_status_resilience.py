@@ -8,8 +8,7 @@ import time
 import httpx
 import pytest
 
-from app import api, image_loader
-from app import ocr
+from app import api, image_loader, ocr
 from app.models import PowerStatus
 
 
@@ -57,13 +56,12 @@ async def test_health_remains_available_during_slow_ocr(monkeypatch, tmp_path, t
     ) as client:
         status_task = asyncio.create_task(client.get("/api/v1/status"))
         assert await asyncio.wait_for(asyncio.to_thread(started.wait), timeout=1)
-        health_response = await asyncio.wait_for(
-            client.get("/api/v1/health"), timeout=0.2
-        )
+        health_response = await asyncio.wait_for(client.get("/api/v1/health"), timeout=0.2)
         status_response = await status_task
 
     assert health_response.status_code == 200
     assert status_response.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_concurrent_status_requests_share_one_refresh(monkeypatch):
@@ -115,9 +113,7 @@ async def test_status_refresh_works_when_redis_is_unavailable(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_last_valid_status_file_is_not_overwritten_by_empty_refresh(
-    monkeypatch, tmp_path
-):
+async def test_last_valid_status_file_is_not_overwritten_by_empty_refresh(monkeypatch, tmp_path):
     monkeypatch.setattr(api.config, "DATA_DIR", tmp_path)
     fallback_file = tmp_path / "last_status.json"
     monkeypatch.setattr(api, "FALLBACK_FILE", fallback_file)
@@ -161,6 +157,7 @@ async def test_last_valid_status_file_is_not_overwritten_by_empty_refresh(
 
     assert json.loads(original)["message"] == saved.message
     assert fallback_file.read_text(encoding="utf-8") == original
+
 
 @pytest.mark.asyncio
 async def test_downloaded_image_is_removed_after_ocr(monkeypatch, tmp_path):

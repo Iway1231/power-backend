@@ -8,6 +8,7 @@ from app.api import build_mobile_home_response, get_mobile_home
 def client(test_app):
     return TestClient(test_app)
 
+
 def test_build_mobile_home_response_for_electricity_and_water():
     electricity = {
         "operator": "naftogaz",
