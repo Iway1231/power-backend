@@ -212,17 +212,36 @@ def is_water_outage_active(outage: dict, now: Optional[datetime] = None) -> bool
 
 
 @router.get("/status")
-async def get_water_status():
+async def get_cached_water_status():
     cached = await _redis_store.get_json("status:water")
     if isinstance(cached, dict):
         return cached
+    return {
+        "operator": "Новояворівськводоканал",
+        "type": "WATER_STATUS",
+        "has_outage": None,
+        "message": "Очікується оновлення даних водоканалу",
+        "channel": "vodocanal_nya",
+        "source_available": False,
+    }
+
+
+async def get_water_status():
+    return await get_cached_water_status()
+
+
+async def refresh_water_status_once() -> bool:
+    """Refresh water status for the shared background refresh loop."""
+    if _water_refresh_lock.locked():
+        logger.info("Skipping water refresh while another refresh is running")
+        return False
+
     async with _water_refresh_lock:
-        cached = await _redis_store.get_json("status:water")
-        if isinstance(cached, dict):
-            return cached
         result = await _fetch_water_status()
+        if result.get("source_available") is False:
+            return False
         await _redis_store.set_json("status:water", result, config.STATUS_CACHE_TTL_SECONDS)
-        return result
+        return True
 
 
 async def _fetch_water_status():

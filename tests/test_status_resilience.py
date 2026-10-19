@@ -54,13 +54,13 @@ async def test_health_remains_available_during_slow_ocr(monkeypatch, tmp_path, t
         transport=httpx.ASGITransport(app=test_app),
         base_url="http://testserver",
     ) as client:
-        status_task = asyncio.create_task(client.get("/api/v1/status"))
+        status_task = asyncio.create_task(api.refresh_power_status_once())
         assert await asyncio.wait_for(asyncio.to_thread(started.wait), timeout=1)
         health_response = await asyncio.wait_for(client.get("/api/v1/health"), timeout=0.2)
-        status_response = await status_task
+        refresh_result = await status_task
 
     assert health_response.status_code == 200
-    assert status_response.status_code == 200
+    assert refresh_result is False
 
 
 @pytest.mark.asyncio
@@ -77,12 +77,18 @@ async def test_concurrent_status_requests_share_one_refresh(monkeypatch):
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.05)
-        return [{"text": "Електроенергії немає з 23:00 по 23:30"}]
+        return [
+            {
+                "text": "Електроенергії немає з 23:00 по 23:30",
+                "published_at": "2026-10-18T08:00:00+03:00",
+            }
+        ]
 
     monkeypatch.setattr(api._redis_store, "get_json", no_redis_get)
     monkeypatch.setattr(api._redis_store, "set_json", no_redis_set)
     monkeypatch.setattr(api, "fetch_latest_posts", slow_posts)
 
+    assert await api.refresh_power_status_once()
     results = await asyncio.gather(*(api.get_power_status() for _ in range(8)))
 
     assert calls == 1
@@ -106,10 +112,11 @@ async def test_status_refresh_works_when_redis_is_unavailable(monkeypatch, tmp_p
     monkeypatch.setattr(api._redis_store, "set_json", unavailable_set)
     monkeypatch.setattr(api, "fetch_latest_posts", no_posts)
 
-    result = await api.get_power_status()
+    assert not await api.refresh_power_status_once()
+    with pytest.raises(api.HTTPException) as error:
+        await api.get_power_status()
 
-    assert isinstance(result, PowerStatus)
-    assert result.message == "Відключень не заплановано"
+    assert error.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -152,8 +159,7 @@ async def test_last_valid_status_file_is_not_overwritten_by_empty_refresh(monkey
     monkeypatch.setattr(api._redis_store, "set_json", no_redis_set)
     monkeypatch.setattr(api, "fetch_latest_posts", no_posts)
 
-    with pytest.raises(api.StatusRefreshUnavailable):
-        await api._fetch_power_status()
+    assert not await api.refresh_power_status_once()
 
     assert json.loads(original)["message"] == saved.message
     assert fallback_file.read_text(encoding="utf-8") == original
@@ -182,7 +188,7 @@ async def test_downloaded_image_is_removed_after_ocr(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "download_image", download)
     monkeypatch.setattr(api, "extract_schedule_from_image", lambda _path: None)
 
-    await api.get_power_status()
+    assert await api.refresh_power_status_once() is False
 
     assert not image_path.exists()
 
