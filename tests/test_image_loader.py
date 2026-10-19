@@ -104,11 +104,7 @@ async def test_api_removes_downloaded_image_after_ocr_error(monkeypatch, tmp_pat
     image_path = tmp_path / "downloaded.jpg"
     image_path.write_bytes(b"image")
     monkeypatch.setattr(api, "download_image", lambda url: asyncio.sleep(0, result=str(image_path)))
-    monkeypatch.setattr(
-        api.asyncio,
-        "to_thread",
-        lambda function, *args: asyncio.sleep(0, result=_raise_runtime_error()),
-    )
+    monkeypatch.setattr(api, "extract_schedule_from_image", lambda _path: _raise_runtime_error())
     monkeypatch.setattr(api, "_status_cache", None)
     monkeypatch.setattr(api, "_status_cache_time", 0)
     monkeypatch.setattr(

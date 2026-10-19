@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 import httpx
@@ -7,6 +8,7 @@ from app.water import (
     get_water_status,
     is_water_outage_active,
     parse_water_outage,
+    refresh_water_status_once,
 )
 
 
@@ -78,7 +80,19 @@ async def test_water_status_returns_active_post(monkeypatch):
         "app.water.is_water_outage_active",
         lambda outage: True,
     )
+    redis_data = {}
 
+    async def redis_get(key):
+        return redis_data.get(key)
+
+    async def redis_set(key, value, _ttl):
+        redis_data[key] = value
+        return True
+
+    monkeypatch.setattr("app.water._redis_store.get_json", redis_get)
+    monkeypatch.setattr("app.water._redis_store.set_json", redis_set)
+
+    assert await refresh_water_status_once()
     result = await get_water_status()
 
     assert result["type"] == "WATER_OUTAGE"
@@ -91,7 +105,11 @@ async def test_water_status_handles_unavailable_channel(monkeypatch):
         raise httpx.ConnectError("offline")
 
     monkeypatch.setattr("app.water.fetch_water_posts", fake_fetch_water_posts)
+    monkeypatch.setattr(
+        "app.water._redis_store.get_json", lambda key: asyncio.sleep(0, result=None)
+    )
 
+    assert not await refresh_water_status_once()
     result = await get_water_status()
 
     assert result["type"] == "WATER_STATUS"
