@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import os
 import tempfile
@@ -231,13 +231,24 @@ def test_download_image_uses_timeout_and_removes_file_on_http_error(monkeypatch)
 
     monkeypatch.setattr(image_loader.httpx, "AsyncClient", FakeClient)
 
+
     with tempfile.TemporaryDirectory() as workdir:
-        monkeypatch.chdir(workdir)
-        with pytest.raises(httpx.HTTPStatusError):
-            asyncio.run(image_loader.download_image("https://example.test/image.jpg"))
-        assert not os.listdir("images")
+        original_cwd = os.getcwd()
+        try:
+            monkeypatch.chdir(workdir)
+            with pytest.raises(httpx.HTTPStatusError):
+                asyncio.run(
+                    image_loader.download_image(
+                        "https://example.test/image.jpg"
+                    )
+                )
+            assert not os.listdir("images")
+        finally:
+            os.chdir(original_cwd)
 
     assert received_timeout is not None
+
+
 
 
 def test_download_image_rejects_oversized_body_and_cleans_temp_file(monkeypatch):
@@ -279,10 +290,18 @@ def test_download_image_rejects_oversized_body_and_cleans_temp_file(monkeypatch)
     monkeypatch.setattr(image_loader.httpx, "AsyncClient", FakeClient)
 
     with tempfile.TemporaryDirectory() as workdir:
-        monkeypatch.chdir(workdir)
-        with pytest.raises(ValueError, match="maximum allowed size"):
-            asyncio.run(image_loader.download_image("https://example.test/large.jpg"))
-        assert not os.listdir("images")
+        original_cwd = os.getcwd()
+        try:
+            monkeypatch.chdir(workdir)
+            with pytest.raises(ValueError, match="maximum allowed size"):
+                asyncio.run(
+                    image_loader.download_image(
+                        "https://example.test/large.jpg"
+                    )
+                )
+            assert not os.listdir("images")
+        finally:
+            os.chdir(original_cwd)
 
 
 def test_download_image_timeout_removes_partial_file(monkeypatch, tmp_path):

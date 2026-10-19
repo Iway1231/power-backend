@@ -73,7 +73,7 @@ async def test_status_returns_cache_without_running_upstream_refresh(monkeypatch
         "operator": "Нафтогаз Тепло",
         "type": "DAILY_STATUS",
         "message": "cached",
-        "date": "2026-10-18",
+        "date": api.current_status_date(),
         "updatedAt": datetime.now().isoformat(),
         "confidence": 1.0,
     }
