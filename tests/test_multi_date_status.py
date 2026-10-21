@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -101,6 +102,77 @@ async def test_same_date_only_newer_publication_replaces_saved_schedule(
 
     assert replaced is False
     assert record["status"]["message"] == "newer"
+
+
+@pytest.mark.asyncio
+async def test_unknown_publication_cannot_replace_known_publication(
+    isolated_schedule_store,
+):
+    await api.save_dated_status(
+        _parsed("2026-10-19", "known"),
+        "2026-10-18T12:00:00+03:00",
+    )
+
+    assert not await api.save_dated_status(_parsed("2026-10-19", "missing"), None)
+    assert not await api.save_dated_status(_parsed("2026-10-19", "invalid"), "not-a-date")
+
+    record = json.loads(
+        (isolated_schedule_store[0] / "2026-10-19.json").read_text(encoding="utf-8")
+    )
+    assert record["status"]["message"] == "known"
+
+
+@pytest.mark.asyncio
+async def test_dated_status_ignores_updated_at_age(monkeypatch, isolated_schedule_store):
+    status_date = "2026-10-18"
+    monkeypatch.setattr(api, "current_status_date", lambda: status_date)
+    old_status = api._status_record_payload(
+        _parsed(status_date, "old but valid"),
+        "2026-10-17T12:00:00+03:00",
+    )
+    old_status["status"]["updatedAt"] = (
+        datetime.now() - timedelta(seconds=api.STATUS_MAX_AGE_SECONDS + 60)
+    ).isoformat()
+    (isolated_schedule_store[0] / f"{status_date}.json").write_text(
+        json.dumps(old_status), encoding="utf-8"
+    )
+
+    result = await api.get_power_status()
+
+    assert result.message == "old but valid"
+
+
+@pytest.mark.asyncio
+async def test_mismatched_file_date_falls_back_to_matching_redis_record(
+    monkeypatch, isolated_schedule_store
+):
+    status_date = "2026-10-18"
+    monkeypatch.setattr(api, "current_status_date", lambda: status_date)
+    wrong = api._status_record_payload(_parsed("2026-10-19", "wrong"), None)
+    matching = api._status_record_payload(_parsed(status_date, "matching"), None)
+    (isolated_schedule_store[0] / f"{status_date}.json").write_text(
+        json.dumps(wrong), encoding="utf-8"
+    )
+    isolated_schedule_store[1][f"status:power:{status_date}"] = matching
+
+    result = await api.get_power_status()
+
+    assert result.message == "matching"
+
+
+@pytest.mark.asyncio
+async def test_redis_write_failure_keeps_multiple_dates_in_files(
+    monkeypatch, isolated_schedule_store
+):
+    async def failing_set(*_args):
+        raise RuntimeError("redis offline")
+
+    monkeypatch.setattr(api._redis_store, "set_json", failing_set)
+    assert await api.save_dated_status(_parsed("2026-10-18", "today"), None)
+    assert await api.save_dated_status(_parsed("2026-10-19", "tomorrow"), None)
+
+    assert (isolated_schedule_store[0] / "2026-10-18.json").exists()
+    assert (isolated_schedule_store[0] / "2026-10-19.json").exists()
 
 
 @pytest.mark.asyncio

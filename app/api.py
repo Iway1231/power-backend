@@ -97,7 +97,20 @@ def _valid_status_date(value: object) -> Optional[str]:
 
 def _is_current_dated_status(status: dict | PowerStatus) -> bool:
     payload = status.model_dump() if isinstance(status, PowerStatus) else status
-    return payload.get("date") == current_status_date() and is_status_current(payload)
+    if _valid_status_date(payload.get("date")) != current_status_date():
+        return False
+    try:
+        PowerStatus(**payload)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _is_current_legacy_status(status: dict | PowerStatus) -> bool:
+    payload = status.model_dump() if isinstance(status, PowerStatus) else status
+    return _valid_status_date(payload.get("date")) == current_status_date() and is_status_current(
+        payload
+    )
 
 
 def is_status_fresh(status: dict | PowerStatus, now: Optional[datetime] = None) -> bool:
@@ -854,7 +867,7 @@ async def get_power_status():
 
 
 async def get_cached_power_status() -> Optional[PowerStatus]:
-    if _status_cache and _is_current_dated_status(_status_cache):
+    if _status_cache and _is_current_legacy_status(_status_cache):
         return PowerStatus(**_status_cache)
 
     dated = await load_dated_status(current_status_date())
@@ -862,10 +875,10 @@ async def get_cached_power_status() -> Optional[PowerStatus]:
         return dated
 
     cached = await _redis_store.get_json("status:power")
-    if isinstance(cached, dict) and _is_current_dated_status(cached):
+    if isinstance(cached, dict) and _is_current_legacy_status(cached):
         return PowerStatus(**cached)
     fallback = load_fallback_status()
-    if fallback is not None and _is_current_dated_status(fallback):
+    if fallback is not None and _is_current_legacy_status(fallback):
         return fallback
     return None
 
@@ -887,9 +900,15 @@ async def refresh_power_status_once() -> bool:
         result_payload = result.model_dump() if isinstance(result, PowerStatus) else result
         if isinstance(result_payload, dict) and result_payload.get("date") == current_status_date():
             _save_legacy_status(result_payload)
-            await _redis_store.set_json(
-                "status:power", result_payload, config.STATUS_CACHE_TTL_SECONDS
-            )
+            try:
+                await _redis_store.set_json(
+                    "status:power", result_payload, config.STATUS_CACHE_TTL_SECONDS
+                )
+            except Exception:
+                logger.warning(
+                    "Power status saved locally but Redis persistence failed",
+                    exc_info=True,
+                )
         logger.info("Power status refresh finished in %.3fs", time.perf_counter() - started)
         return True
     except (httpx.HTTPError, asyncio.TimeoutError, StatusRefreshUnavailable) as exc:
@@ -987,20 +1006,37 @@ def _status_record_payload(parsed: dict, published_at: Optional[str]) -> dict:
     return {"status": status, "published_at": published_at}
 
 
-def _published_timestamp(value: object) -> float:
+def _published_timestamp(value: object) -> Optional[float]:
     if not isinstance(value, str):
-        return float("-inf")
+        return None
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
     except (TypeError, ValueError, OverflowError):
-        return float("-inf")
+        return None
 
 
-def _record_status(record: object) -> Optional[dict]:
+def _should_replace_publication(
+    existing_published_at: object, candidate_published_at: object
+) -> bool:
+    existing_timestamp = _published_timestamp(existing_published_at)
+    candidate_timestamp = _published_timestamp(candidate_published_at)
+    if existing_timestamp is None:
+        return candidate_timestamp is not None
+    if candidate_timestamp is None:
+        return False
+    return candidate_timestamp > existing_timestamp
+
+
+def _record_status(record: object, expected_date: Optional[str] = None) -> Optional[dict]:
     if not isinstance(record, dict):
         return None
     payload = record.get("status", record)
-    return payload if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return None
+    record_date = _valid_status_date(payload.get("date"))
+    if record_date is None or (expected_date is not None and record_date != expected_date):
+        return None
+    return payload
 
 
 async def load_dated_record(status_date: str) -> Optional[dict]:
@@ -1009,16 +1045,16 @@ async def load_dated_record(status_date: str) -> Optional[dict]:
             record = json.load(file)
     except (OSError, TypeError, ValueError):
         record = None
-    if _record_status(record) is not None:
+    if _record_status(record, status_date) is not None:
         return record
 
     record = await _redis_store.get_json(f"status:power:{status_date}")
-    return record if _record_status(record) is not None else None
+    return record if _record_status(record, status_date) is not None else None
 
 
 async def load_dated_status(status_date: str) -> Optional[PowerStatus]:
     record = await load_dated_record(status_date)
-    payload = _record_status(record)
+    payload = _record_status(record, status_date)
     if payload is None:
         return None
     try:
@@ -1027,24 +1063,33 @@ async def load_dated_status(status_date: str) -> Optional[PowerStatus]:
         return None
 
 
-def _write_dated_record(status_date: str, record: dict) -> None:
+def _write_dated_record(status_date: str, record: dict) -> bool:
     target = _dated_status_file(status_date)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=config.DATA_DIR, prefix="status-", suffix=".json")
+    tmp_path = None
     try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=config.DATA_DIR,
+            prefix="status-",
+            suffix=".json",
+        )
         with os.fdopen(fd, "w", encoding="utf-8") as file:
             json.dump(record, file, ensure_ascii=False, indent=2)
         os.replace(tmp_path, target)
+        return True
     except OSError:
         try:
             with target.open("w", encoding="utf-8") as file:
                 json.dump(record, file, ensure_ascii=False, indent=2)
+            return True
         except OSError:
             logger.warning("Failed to persist dated status to %s", target)
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return False
 
 
 async def save_dated_status(parsed: dict, published_at: Optional[str]) -> bool:
@@ -1054,17 +1099,25 @@ async def save_dated_status(parsed: dict, published_at: Optional[str]) -> bool:
 
     candidate = _status_record_payload(parsed, published_at)
     existing = await load_dated_record(status_date)
-    if existing is not None and _published_timestamp(
-        existing.get("published_at")
-    ) > _published_timestamp(published_at):
+    if existing is not None and not _should_replace_publication(
+        existing.get("published_at"), published_at
+    ):
         return False
 
-    _write_dated_record(status_date, candidate)
-    await _redis_store.set_json(
-        f"status:power:{status_date}",
-        candidate,
-        POWER_SCHEDULE_CACHE_TTL_SECONDS,
-    )
+    if not _write_dated_record(status_date, candidate):
+        return False
+    try:
+        await _redis_store.set_json(
+            f"status:power:{status_date}",
+            candidate,
+            POWER_SCHEDULE_CACHE_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning(
+            "Dated status saved to file but Redis persistence failed for %s",
+            status_date,
+            exc_info=True,
+        )
     return True
 
 
@@ -1091,9 +1144,7 @@ async def _fetch_power_status():
             status_date = _valid_status_date(parsed_text.get("date"))
             if status_date is not None:
                 previous = candidates.get(status_date)
-                if previous is None or _published_timestamp(published_at) >= _published_timestamp(
-                    previous[1]
-                ):
+                if previous is None or _should_replace_publication(previous[1], published_at):
                     candidates[status_date] = (parsed_text, published_at)
             continue
 
@@ -1124,9 +1175,7 @@ async def _fetch_power_status():
             if status_date is not None:
                 published_at = post.get("published_at")
                 previous = candidates.get(status_date)
-                if previous is None or _published_timestamp(published_at) >= _published_timestamp(
-                    previous[1]
-                ):
+                if previous is None or _should_replace_publication(previous[1], published_at):
                     candidates[status_date] = (parsed_image, published_at)
 
         except Exception as e:
@@ -1141,15 +1190,12 @@ async def _fetch_power_status():
     current = await load_dated_status(current_status_date())
     if current is not None and _is_current_dated_status(current):
         return current
-    newest = max(
-        candidates.values(),
-        key=lambda item: _published_timestamp(item[1]),
-    )[0]
-    newest_published_at = max(
-        candidates.values(),
-        key=lambda item: _published_timestamp(item[1]),
-    )[1]
-    return _status_record_payload(newest, newest_published_at)["status"]
+    newest = next(iter(candidates.values()))
+    for candidate in candidates.values():
+        if _should_replace_publication(newest[1], candidate[1]):
+            newest = candidate
+    newest_parsed, newest_published_at = newest
+    return _status_record_payload(newest_parsed, newest_published_at)["status"]
 
 
 @router.get("/my-status", tags=["outages"])
