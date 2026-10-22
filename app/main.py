@@ -1,8 +1,12 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from app import api
 from app.api import API_V1_PREFIX, router
 from app.config import SETTINGS, Settings
 from app.errors import register_exception_handlers
@@ -23,8 +27,25 @@ OPENAPI_TAGS = [
 ]
 
 
-def create_app(settings: Settings = SETTINGS) -> FastAPI:
+def create_app(settings: Settings = SETTINGS, start_background_refresh: bool = True) -> FastAPI:
     configure_logging(settings.log_level, settings.log_format)
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        refresh_task = None
+        stop_event = None
+        if start_background_refresh:
+            stop_event = asyncio.Event()
+            refresh_task = asyncio.create_task(api.run_background_refresh_loop(stop_event))
+            application.state.status_refresh_task = refresh_task
+        try:
+            yield
+        finally:
+            if refresh_task is not None and stop_event is not None:
+                stop_event.set()
+                refresh_task.cancel()
+                await asyncio.gather(refresh_task, return_exceptions=True)
+                application.state.status_refresh_task = None
 
     application = FastAPI(
         title=settings.app_name,
@@ -42,6 +63,7 @@ def create_app(settings: Settings = SETTINGS) -> FastAPI:
         },
         openapi_tags=OPENAPI_TAGS,
         debug=settings.debug,
+        lifespan=lifespan,
     )
 
     application.add_middleware(GZipMiddleware, minimum_size=1000)

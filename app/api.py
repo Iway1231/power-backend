@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 import weakref
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Annotated, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -60,6 +60,11 @@ _status_cache_time: float = 0
 _status_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _status_locks_guard = threading.Lock()
 _ocr_gate = threading.Lock()
+STATUS_REFRESH_INTERVAL_SECONDS = 300
+STATUS_MAX_AGE_SECONDS = (
+    STATUS_REFRESH_INTERVAL_SECONDS + config.SETTINGS.status_refresh_timeout_seconds
+)
+POWER_SCHEDULE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 class StatusRefreshUnavailable(RuntimeError):
@@ -67,9 +72,65 @@ class StatusRefreshUnavailable(RuntimeError):
 
 
 def is_status_current(status: dict | PowerStatus) -> bool:
-    """Do not serve a cached planned outage after its schedule date passed."""
+    """Return whether a cached status is fresh and schedule-valid."""
     payload = status.model_dump() if isinstance(status, PowerStatus) else status
-    return is_planned_outage_active(payload)
+    return is_status_fresh(payload) and is_planned_outage_active(payload)
+
+
+def current_status_date(now: Optional[datetime] = None) -> str:
+    try:
+        timezone = ZoneInfo(config.TIMEZONE)
+    except ZoneInfoNotFoundError:
+        timezone = None
+    current = now or (datetime.now(timezone) if timezone else datetime.now())
+    return current.date().isoformat()
+
+
+def _valid_status_date(value: object) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        return None
+
+
+def _is_current_dated_status(status: dict | PowerStatus) -> bool:
+    payload = status.model_dump() if isinstance(status, PowerStatus) else status
+    if _valid_status_date(payload.get("date")) != current_status_date():
+        return False
+    try:
+        PowerStatus(**payload)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _is_current_legacy_status(status: dict | PowerStatus) -> bool:
+    payload = status.model_dump() if isinstance(status, PowerStatus) else status
+    return _valid_status_date(payload.get("date")) == current_status_date() and is_status_current(
+        payload
+    )
+
+
+def is_status_fresh(status: dict | PowerStatus, now: Optional[datetime] = None) -> bool:
+    payload = status.model_dump() if isinstance(status, PowerStatus) else status
+    updated_at = payload.get("updatedAt")
+    if not updated_at:
+        return False
+
+    try:
+        recorded_at = datetime.fromisoformat(updated_at)
+    except (TypeError, ValueError):
+        return False
+
+    current = now or datetime.now(recorded_at.tzinfo)
+    if current.tzinfo is not None and recorded_at.tzinfo is None:
+        current = current.replace(tzinfo=None)
+    elif current.tzinfo is None and recorded_at.tzinfo is not None:
+        recorded_at = recorded_at.replace(tzinfo=None)
+    age = (current - recorded_at).total_seconds()
+    return 0 <= age <= STATUS_MAX_AGE_SECONDS
 
 
 def get_status_refresh_lock() -> asyncio.Lock:
@@ -82,22 +143,53 @@ def get_status_refresh_lock() -> asyncio.Lock:
         return lock
 
 
-async def extract_schedule_with_gate(image_path: str) -> Optional[dict]:
-    """Run at most one OCR process per API process.
+def _remove_ocr_image(image_path: str) -> None:
+    try:
+        os.unlink(image_path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.warning("Failed to remove OCR image after processing")
 
-    OCR is CPU-heavy and can run across event loops when the application is
-    exercised by multiple clients or test workers. A non-blocking thread lock
-    prevents a second Tesseract process from increasing CPU pressure; callers
-    already have the normal cached-status fallback when OCR is busy.
+
+def _run_ocr_job(image_path: str) -> Optional[dict]:
+    """Run one already-admitted OCR job and own its resource lifecycle."""
+    started = time.perf_counter()
+    try:
+        return extract_schedule_from_image(image_path)
+    finally:
+        _ocr_gate.release()
+        _remove_ocr_image(image_path)
+        logger.info("OCR finished in %.3fs", time.perf_counter() - started)
+
+
+def _consume_ocr_worker_result(worker: asyncio.Task) -> None:
+    if worker.cancelled():
+        return
+    worker.exception()
+
+
+async def extract_schedule_with_gate(image_path: str) -> Optional[dict]:
+    """Run at most one OCR process while keeping cancellation safe.
+
+    The synchronous worker owns the lock and cleanup. If the awaiting
+    coroutine is cancelled, the worker still releases both resources only
+    after Tesseract and image processing have actually finished.
     """
     if not _ocr_gate.acquire(blocking=False):
         logger.warning("Skipping OCR while another OCR task is running")
+        _remove_ocr_image(image_path)
         return None
 
     try:
-        return await asyncio.to_thread(extract_schedule_from_image, image_path)
-    finally:
+        worker = asyncio.create_task(asyncio.to_thread(_run_ocr_job, image_path))
+    except BaseException:
         _ocr_gate.release()
+        _remove_ocr_image(image_path)
+        raise
+
+    worker.add_done_callback(_consume_ocr_worker_result)
+    return await asyncio.shield(worker)
 
 
 @router.get("/loe/cities", tags=["addresses"])
@@ -272,12 +364,8 @@ def build_group_state(groups: Dict[str, List[str]]) -> Dict[str, dict]:
     return result
 
 
-def merge_date(ocr_date: Optional[str], post_date: Optional[str]) -> str:
-    if ocr_date:
-        return ocr_date
-    if post_date:
-        return post_date[:10]
-    return datetime.now().strftime("%Y-%m-%d")
+def merge_date(ocr_date: Optional[str], _post_date: Optional[str]) -> Optional[str]:
+    return ocr_date if _valid_status_date(ocr_date) is not None else None
 
 
 def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bool:
@@ -286,8 +374,8 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
 
     date = parsed.get("date")
     intervals = parsed.get("intervals") or []
-    if not date or not intervals:
-        return True
+    if _valid_status_date(date) is None or not intervals:
+        return False
 
     now = now or datetime.now()
     latest_end = None
@@ -306,7 +394,7 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
             latest_end = end_at
 
     if latest_end is None:
-        return True
+        return False
 
     return latest_end >= now
 
@@ -314,14 +402,14 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
 def is_schedule_interval_active(
     date: Optional[str], interval: str, now: Optional[datetime] = None
 ) -> bool:
-    if not date:
-        return True
+    if _valid_status_date(date) is None:
+        return False
 
     try:
         to_time = interval.split("-", 1)[1]
         end_at = datetime.fromisoformat(f"{date}T{to_time}:00")
     except (IndexError, ValueError):
-        return True
+        return False
 
     now = now or datetime.now()
     return end_at >= now
@@ -345,7 +433,7 @@ def is_group_schedule_active(parsed: dict, now: Optional[datetime] = None) -> bo
         all_outages.extend(group_status.get("outages") or [])
 
     if not all_outages:
-        return True
+        return False
 
     return bool(active_schedule_intervals(parsed.get("date"), all_outages, now=now))
 
@@ -371,15 +459,7 @@ def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]
 
     raw_groups = ocr.get("groups", {})
     if not raw_groups:
-        if not ocr.get("date"):
-            return None
-
-        return {
-            "type": "DAILY_STATUS",
-            "message": "Відключень не заплановано",
-            "date": ocr["date"],
-            "confidence": _overall_confidence(ocr.get("confidence", 0.8)),
-        }
+        return None
 
     return {
         "type": "GROUP_SCHEDULE",
@@ -478,14 +558,22 @@ def build_mobile_section(
 def build_water_mobile_section(status: dict) -> dict:
     is_outage = status.get("type") == "WATER_OUTAGE"
     has_outage = status.get("has_outage")
-    if has_outage is None and is_outage:
-        has_outage = True
+    if has_outage is None and "has_outage" not in status:
+        has_outage = is_outage
 
     normalized = {
         **status,
         "has_outage": has_outage,
-        "status": "OFF" if is_outage else infer_status(has_outage),
-        "title": "Є відключення води" if is_outage else "Вода є",
+        "status": infer_status(has_outage),
+        "title": (
+            "Є відключення води"
+            if has_outage is True
+            else "Заплановане відключення води"
+            if is_outage and has_outage is False
+            else "Стан водопостачання уточнюється"
+            if is_outage
+            else "Вода є"
+        ),
         "subtitle": status.get("message") or "",
         "details": [
             build_detail("Дата", status.get("date")),
@@ -765,50 +853,113 @@ def is_loe_interval_active(
 
 @router.get("/status", response_model=PowerStatus, tags=["outages"])
 async def get_power_status():
-    cached = await _redis_store.get_json("status:power")
-    if isinstance(cached, dict) and is_status_current(cached):
-        return PowerStatus(**cached)
+    cached = await get_cached_power_status()
+    if cached is not None:
+        return cached
+    raise HTTPException(
+        status_code=503,
+        detail="Power status is temporarily unavailable",
+    )
 
+
+async def get_cached_power_status() -> Optional[PowerStatus]:
+    if _status_cache and _is_current_legacy_status(_status_cache):
+        return PowerStatus(**_status_cache)
+
+    dated = await load_dated_status(current_status_date())
+    if dated is not None and _is_current_dated_status(dated):
+        return dated
+
+    cached = await _redis_store.get_json("status:power")
+    if isinstance(cached, dict) and _is_current_legacy_status(cached):
+        return PowerStatus(**cached)
+    fallback = load_fallback_status()
+    if fallback is not None and _is_current_legacy_status(fallback):
+        return fallback
+    return None
+
+
+async def refresh_power_status_once() -> bool:
+    """Refresh electricity status without making API callers wait for it."""
     lock = get_status_refresh_lock()
+    if lock.locked():
+        logger.info("Skipping power refresh while another refresh is running")
+        return False
+
+    await lock.acquire()
+    started = time.perf_counter()
     try:
-        await asyncio.wait_for(
-            lock.acquire(),
+        result = await asyncio.wait_for(
+            _fetch_power_status(),
             timeout=config.SETTINGS.status_refresh_timeout_seconds,
         )
-    except asyncio.TimeoutError as exc:
-        fallback = load_fallback_status()
-        if fallback is not None:
-            logger.warning("Serving last known power status while refresh is busy")
-            return fallback
-        raise HTTPException(status_code=503, detail="Power status refresh timed out") from exc
-
-    try:
-        cached = await _redis_store.get_json("status:power")
-        if isinstance(cached, dict) and is_status_current(cached):
-            return PowerStatus(**cached)
-        try:
-            result = await asyncio.wait_for(
-                _fetch_power_status(),
-                timeout=config.SETTINGS.status_refresh_timeout_seconds,
-            )
-        except (httpx.HTTPError, asyncio.TimeoutError, StatusRefreshUnavailable) as exc:
-            fallback = load_fallback_status()
-            if fallback is not None and is_status_current(fallback):
-                logger.warning("Serving last known power status after refresh failure: %s", exc)
-                return fallback
-            if isinstance(exc, StatusRefreshUnavailable):
-                result = build_daily_status()
-            else:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Power status refresh timed out",
-                ) from exc
-        await _redis_store.set_json(
-            "status:power", result.model_dump(), config.STATUS_CACHE_TTL_SECONDS
+        result_payload = result.model_dump() if isinstance(result, PowerStatus) else result
+        if isinstance(result_payload, dict) and result_payload.get("date") == current_status_date():
+            _save_legacy_status(result_payload)
+            try:
+                await _redis_store.set_json(
+                    "status:power", result_payload, config.STATUS_CACHE_TTL_SECONDS
+                )
+            except Exception:
+                logger.warning(
+                    "Power status saved locally but Redis persistence failed",
+                    exc_info=True,
+                )
+        logger.info("Power status refresh finished in %.3fs", time.perf_counter() - started)
+        return True
+    except (httpx.HTTPError, asyncio.TimeoutError, StatusRefreshUnavailable) as exc:
+        logger.warning(
+            "Power status refresh failed after %.3fs: %s",
+            time.perf_counter() - started,
+            exc,
         )
-        return result
+        return False
     finally:
         lock.release()
+
+
+async def run_background_refresh_loop(
+    stop_event: asyncio.Event,
+    interval_seconds: float = STATUS_REFRESH_INTERVAL_SECONDS,
+) -> None:
+    """Refresh electricity and water independently, starting immediately."""
+    from app.water import refresh_water_status_once
+
+    async def run_refresh_worker(refresh, name: str, timeout: Optional[float] = None):
+        next_run = time.monotonic()
+        while not stop_event.is_set():
+            try:
+                if timeout is None:
+                    await refresh()
+                else:
+                    await asyncio.wait_for(refresh(), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning("Background %s refresh timed out", name)
+            except Exception:
+                logger.exception("Background %s refresh failed", name)
+
+            next_run += interval_seconds
+            delay = max(0, next_run - time.monotonic())
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                continue
+
+    power_task = asyncio.create_task(run_refresh_worker(refresh_power_status_once, "power"))
+    water_task = asyncio.create_task(
+        run_refresh_worker(
+            refresh_water_status_once,
+            "water",
+            timeout=config.SETTINGS.status_refresh_timeout_seconds,
+        )
+    )
+    try:
+        await asyncio.gather(power_task, water_task)
+    finally:
+        for task in (power_task, water_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(power_task, water_task, return_exceptions=True)
 
 
 def build_daily_status() -> PowerStatus:
@@ -832,58 +983,213 @@ def load_fallback_status() -> Optional[PowerStatus]:
         return None
 
 
-async def _fetch_power_status():
-    global _status_cache, _status_cache_time
+def _dated_status_file(status_date: str):
+    return HISTORY_DIR / f"{status_date}.json"
 
-    now = time.time()
-    if (
-        _status_cache
-        and (now - _status_cache_time) < config.STATUS_CACHE_TTL_SECONDS
-        and is_status_current(_status_cache)
+
+def _status_record_payload(parsed: dict, published_at: Optional[str]) -> dict:
+    status = {
+        "city": config.CITY_NAME,
+        "operator": config.OPERATOR,
+        "type": parsed["type"],
+        "message": parsed.get("message"),
+        "groups": parsed.get("groups"),
+        "intervals": parsed.get("intervals"),
+        "date": parsed["date"],
+        "updatedAt": datetime.now().isoformat(),
+        "confidence": parsed.get("confidence", 1.0),
+    }
+    return {"status": status, "published_at": published_at}
+
+
+def _published_timestamp(value: object) -> Optional[float]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _should_replace_publication(
+    existing_published_at: object, candidate_published_at: object
+) -> bool:
+    existing_timestamp = _published_timestamp(existing_published_at)
+    candidate_timestamp = _published_timestamp(candidate_published_at)
+    if existing_timestamp is None:
+        return candidate_timestamp is not None
+    if candidate_timestamp is None:
+        return False
+    return candidate_timestamp > existing_timestamp
+
+
+def _record_status(record: object, expected_date: Optional[str] = None) -> Optional[dict]:
+    if not isinstance(record, dict):
+        return None
+    payload = record.get("status", record)
+    if not isinstance(payload, dict):
+        return None
+    record_date = _valid_status_date(payload.get("date"))
+    if record_date is None or (expected_date is not None and record_date != expected_date):
+        return None
+    return payload
+
+
+async def load_dated_record(status_date: str) -> Optional[dict]:
+    try:
+        with _dated_status_file(status_date).open("r", encoding="utf-8") as file:
+            record = json.load(file)
+    except (OSError, TypeError, ValueError):
+        record = None
+    if _record_status(record, status_date) is not None:
+        return record
+
+    record = await _redis_store.get_json(f"status:power:{status_date}")
+    return record if _record_status(record, status_date) is not None else None
+
+
+async def load_dated_status(status_date: str) -> Optional[PowerStatus]:
+    record = await load_dated_record(status_date)
+    payload = _record_status(record, status_date)
+    if payload is None:
+        return None
+    try:
+        return PowerStatus(**payload)
+    except (TypeError, ValueError):
+        return None
+
+
+def _write_dated_record(status_date: str, record: dict) -> bool:
+    target = _dated_status_file(status_date)
+    tmp_path = None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=config.DATA_DIR,
+            prefix="status-",
+            suffix=".json",
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(record, file, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, target)
+        return True
+    except OSError:
+        try:
+            with target.open("w", encoding="utf-8") as file:
+                json.dump(record, file, ensure_ascii=False, indent=2)
+            return True
+        except OSError:
+            logger.warning("Failed to persist dated status to %s", target)
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return False
+
+
+async def save_dated_status(parsed: dict, published_at: Optional[str]) -> bool:
+    status_date = _valid_status_date(parsed.get("date"))
+    if status_date is None:
+        return False
+
+    candidate = _status_record_payload(parsed, published_at)
+    existing = await load_dated_record(status_date)
+    if existing is not None and not _should_replace_publication(
+        existing.get("published_at"), published_at
     ):
-        return PowerStatus(**_status_cache)
+        return False
 
+    if not _write_dated_record(status_date, candidate):
+        return False
+    try:
+        await _redis_store.set_json(
+            f"status:power:{status_date}",
+            candidate,
+            POWER_SCHEDULE_CACHE_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning(
+            "Dated status saved to file but Redis persistence failed for %s",
+            status_date,
+            exc_info=True,
+        )
+    return True
+
+
+async def _fetch_power_status():
+    started = time.perf_counter()
     posts = await fetch_latest_posts(limit=20)
-    valid_result = False
+    logger.info(
+        "Fetched %d Telegram posts in %.3fs",
+        len(posts),
+        time.perf_counter() - started,
+    )
+    candidates: dict[str, tuple[dict, Optional[str]]] = {}
+    seen_images: set[str] = set()
 
     for post in reversed(posts):
         parsed_text = parse_power_text(post.get("text", ""))
         if parsed_text:
-            valid_result = True
             if not is_planned_outage_active(parsed_text):
                 continue
-            return save_status(parsed_text)
+            published_at = post.get("published_at")
+            parsed_text = dict(parsed_text)
+            status_date = _valid_status_date(parsed_text.get("date"))
+            if status_date is not None:
+                previous = candidates.get(status_date)
+                if previous is None or _should_replace_publication(previous[1], published_at):
+                    candidates[status_date] = (parsed_text, published_at)
+            continue
 
         try:
             if not post.get("image"):
                 continue
+            if post["image"] in seen_images:
+                continue
+            seen_images.add(post["image"])
 
+            download_started = time.perf_counter()
             image_path = await download_image(post["image"])
-            try:
-                ocr = await extract_schedule_with_gate(image_path)
-                if not ocr:
-                    continue
+            logger.info(
+                "Downloaded Telegram image in %.3fs",
+                time.perf_counter() - download_started,
+            )
+            ocr = await extract_schedule_with_gate(image_path)
+            if not ocr:
+                continue
 
-                parsed_image = build_status_from_ocr(ocr, post.get("published_at"))
-                if not parsed_image:
-                    continue
-                valid_result = True
-                if not is_group_schedule_active(parsed_image):
-                    continue
+            parsed_image = build_status_from_ocr(ocr, post.get("published_at"))
+            if not parsed_image:
+                continue
+            if not is_group_schedule_active(parsed_image):
+                continue
 
-                return save_status(parsed_image)
-            finally:
-                try:
-                    os.unlink(image_path)
-                except FileNotFoundError:
-                    pass
+            status_date = _valid_status_date(parsed_image.get("date"))
+            if status_date is not None:
+                published_at = post.get("published_at")
+                previous = candidates.get(status_date)
+                if previous is None or _should_replace_publication(previous[1], published_at):
+                    candidates[status_date] = (parsed_image, published_at)
 
         except Exception as e:
             logger.error("OCR error: %s", e, exc_info=True)
 
-    if not valid_result:
-        raise StatusRefreshUnavailable("No valid status was produced by the upstream source")
-    return build_daily_status()
+    if not candidates:
+        raise StatusRefreshUnavailable("No valid dated status was produced by the upstream source")
+
+    for parsed, published_at in candidates.values():
+        await save_dated_status(parsed, published_at)
+
+    current = await load_dated_status(current_status_date())
+    if current is not None and _is_current_dated_status(current):
+        return current
+    newest = next(iter(candidates.values()))
+    for candidate in candidates.values():
+        if _should_replace_publication(newest[1], candidate[1]):
+            newest = candidate
+    newest_parsed, newest_published_at = newest
+    return _status_record_payload(newest_parsed, newest_published_at)["status"]
 
 
 @router.get("/my-status", tags=["outages"])
@@ -964,8 +1270,6 @@ async def get_mobile_home(
 
 
 def save_status(parsed: dict) -> PowerStatus:
-    global _status_cache, _status_cache_time
-
     status = {
         "city": config.CITY_NAME,
         "operator": config.OPERATOR,
@@ -977,6 +1281,12 @@ def save_status(parsed: dict) -> PowerStatus:
         "updatedAt": datetime.now().isoformat(),
         "confidence": parsed.get("confidence", 1.0),
     }
+    _save_legacy_status(status)
+    return PowerStatus(**status)
+
+
+def _save_legacy_status(status: dict) -> None:
+    global _status_cache, _status_cache_time
 
     _status_cache = status
     _status_cache_time = time.time()
@@ -992,5 +1302,3 @@ def save_status(parsed: dict) -> PowerStatus:
         os.replace(tmp_path, FALLBACK_FILE)
     except OSError:
         logger.warning("Failed to persist status to %s", FALLBACK_FILE)
-
-    return PowerStatus(**status)
