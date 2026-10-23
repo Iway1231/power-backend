@@ -33,20 +33,6 @@ ROWS = [
     ("6.1", "6.2"),
 ]
 
-VALID_INTERVALS = {
-    "00:00-04:00",
-    "04:00-08:00",
-    "06:00-08:00",
-    "08:00-12:00",
-    "10:00-14:00",
-    "12:00-16:00",
-    "14:00-18:00",
-    "16:00-20:00",
-    "18:00-22:00",
-    "20:00-22:00",
-    "20:00-23:59",
-}
-
 TIME_SEPARATORS = [
     "\u043f\u043e",  # по
     "\u0448\u043e",  # шо
@@ -194,7 +180,7 @@ def extract_intervals(text: str) -> List[str]:
         end = fix_time(h2, m2)
         if start and end:
             interval = f"{start}-{end}"
-            if interval in VALID_INTERVALS:
+            if is_valid_interval(interval):
                 found.add(interval)
 
     return sorted(found)
@@ -205,17 +191,31 @@ def fix_time(h: str, m: str) -> Optional[str]:
         h = int(h)
         m = int(m)
 
-        # 🔥 OCR FIXES
-        if m in (9, 90):
-            m = 0
-        if h == 11 and m == 0:
-            h = 20
-
-        if 0 <= h <= 23 and m in (0, 59):
+        if 0 <= h <= 23 and 0 <= m <= 59:
             return f"{h:02d}:{m:02d}"
     except (ValueError, TypeError):
         pass
     return None
+
+
+def is_valid_interval(interval: str) -> bool:
+    match = re.fullmatch(r"(\d{2}:\d{2})-(\d{2}:\d{2})", interval)
+    if not match:
+        return False
+
+    start = _time_to_minutes(match.group(1))
+    end = _time_to_minutes(match.group(2))
+    return start is not None and end is not None and end > start
+
+
+def _time_to_minutes(value: str) -> Optional[int]:
+    try:
+        hour, minute = (int(part) for part in value.split(":", 1))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour * 60 + minute
 
 
 # ======================================================
@@ -236,17 +236,5 @@ def split_tiles(img: np.ndarray) -> List[np.ndarray]:
 
 
 def restore_rows(groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    out = groups.copy()
-
-    for a, b in ROWS:
-        ga = set(out.get(a, []))
-        gb = set(out.get(b, []))
-
-        # 🔹 якщо різниця 1 інтервал → OCR шум
-        if ga and gb:
-            if abs(len(ga) - len(gb)) == 1:
-                merged = sorted(ga | gb)
-                out[a] = merged
-                out[b] = merged
-
-    return out
+    # Missing OCR data is ambiguous; do not copy a neighbor's schedule into it.
+    return {group: list(intervals) for group, intervals in groups.items()}

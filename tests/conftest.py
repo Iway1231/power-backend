@@ -21,4 +21,4 @@ def test_app():
     settings = SETTINGS.model_copy(
         update={"environment": "test", "allowed_hosts": ["testserver", "localhost", "127.0.0.1"]}
     )
-    return create_app(settings)
+    return create_app(settings, start_background_refresh=False)

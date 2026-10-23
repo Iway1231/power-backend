@@ -22,9 +22,22 @@ def test_no_magic_copy_when_one_side_empty():
     assert restored["2.2"] == ["12:00-16:00"]
 
 
+def test_restore_rows_does_not_copy_conflicting_neighbor_intervals():
+    groups = {
+        "1.1": ["08:00-12:00", "16:00-20:00"],
+        "1.2": ["10:00-14:00"],
+    }
+
+    assert restore_rows(groups) == groups
+
+
 def test_extract_intervals_handles_ne_ocr_separator():
     assert extract_intervals("з 08:00 ne 12:00") == ["08:00-12:00"]
 
 
 def test_extract_intervals_handles_single_early_outage():
     assert extract_intervals("з 6:00 по 8:00") == ["06:00-08:00"]
+
+
+def test_extract_intervals_preserves_1100_and_non_template_ranges():
+    assert extract_intervals("з 11:00 по 14:00") == ["11:00-14:00"]

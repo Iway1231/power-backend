@@ -77,10 +77,17 @@ def parse_water_outage(text: str, published_at: Optional[str] = None) -> Optiona
     ):
         return None
 
-    date = extract_water_date(text, published_at)
+    date = extract_water_date(text, published_at) or published_date(published_at)
     from_time, to_time = extract_water_times(text)
+    explicit_interval = re.search(
+        r"(?:з|із)\s*\d{1,2}:\d{2}\s*(?:до|по|-|–|—)\s*\d{1,2}:\d{2}",
+        text,
+        re.IGNORECASE,
+    )
 
-    if not date or not from_time:
+    if not date or (explicit_interval and (not from_time or not to_time)):
+        return None
+    if not from_time and not to_time:
         return None
 
     return {
@@ -135,6 +142,15 @@ def published_year(published_at: Optional[str]) -> Optional[int]:
         return None
 
 
+def published_date(published_at: Optional[str]) -> Optional[str]:
+    if not published_at:
+        return None
+    try:
+        return datetime.fromisoformat(published_at.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return None
+
+
 def extract_water_times(text: str) -> tuple[Optional[str], Optional[str]]:
     interval = re.search(
         r"(?:з|із)\s*(\d{1,2}:\d{2})\s*(?:до|по|-|–|—)\s*(\d{1,2}:\d{2})",
@@ -146,7 +162,7 @@ def extract_water_times(text: str) -> tuple[Optional[str], Optional[str]]:
 
     start = re.search(r"(?:з|із)\s*(\d{1,2}:\d{2})", text, re.IGNORECASE)
     restoration = re.search(
-        r"(?:час\s+відновлення|відновлення\s+водопостачання).*?(\d{1,2}:\d{2})",
+        r"(?:час\s+відновлення|відновлення\s+водопостачання|час\s+ліквідації\s+аварії).*?(\d{1,2}:\d{2})",
         text,
         re.IGNORECASE | re.DOTALL,
     )
@@ -174,11 +190,19 @@ def extract_water_locations(text: str) -> list[str]:
             r"(?=також|орієнтовн|просимо|дякуємо|$)"
         ),
         (
+            r"водопостачання\s+(?:у|в)\s+(.+?)"
+            r"(?=через|у\s+зв'язку|орієнтовн|просимо|дякуємо|$)"
+        ),
+        (
             r"води\s+не\s+буде\s+у:?\s*(.+?)"
             r"(?=також|орієнтовн|просимо|дякуємо|$)"
         ),
         (
             r"без\s+водопостачання\s+залишаться:?\s*(.+?)"
+            r"(?=орієнтовн|просимо|дякуємо|$)"
+        ),
+        (
+            r"за\s+адресами:?\s*(.+?)"
             r"(?=орієнтовн|просимо|дякуємо|$)"
         ),
     ]
@@ -194,6 +218,7 @@ def extract_water_locations(text: str) -> list[str]:
         cleaned = re.sub(r"\s+(?:та|і)\s+", ",", cleaned, flags=re.IGNORECASE)
         for item in re.split(r"[,;\n]+", cleaned):
             location = re.sub(r"\s+", " ", item).strip(" .:-")
+            location = re.sub(r"^а\s+також\s+", "", location, flags=re.IGNORECASE)
             if location and location not in locations:
                 locations.append(location)
 
@@ -211,18 +236,57 @@ def is_water_outage_active(outage: dict, now: Optional[datetime] = None) -> bool
     return ends_at >= now
 
 
+def is_water_outage_currently_active(outage: dict, now: Optional[datetime] = None) -> bool:
+    """Return whether a valid water outage is active at the supplied moment."""
+    date = outage.get("date")
+    from_time = outage.get("from_time")
+    to_time = outage.get("to_time")
+    if not date or not from_time or not to_time:
+        return False
+
+    try:
+        starts_at = datetime.fromisoformat(f"{date}T{from_time}:00")
+        ends_at = datetime.fromisoformat(f"{date}T{to_time}:00")
+    except (TypeError, ValueError):
+        return False
+
+    if ends_at <= starts_at:
+        return False
+    current = now or datetime.now()
+    return starts_at <= current < ends_at
+
+
 @router.get("/status")
-async def get_water_status():
+async def get_cached_water_status():
     cached = await _redis_store.get_json("status:water")
     if isinstance(cached, dict):
         return cached
+    return {
+        "operator": "Новояворівськводоканал",
+        "type": "WATER_STATUS",
+        "has_outage": None,
+        "message": "Очікується оновлення даних водоканалу",
+        "channel": "vodocanal_nya",
+        "source_available": False,
+    }
+
+
+async def get_water_status():
+    return await get_cached_water_status()
+
+
+async def refresh_water_status_once() -> bool:
+    """Refresh water status for the shared background refresh loop."""
+    if _water_refresh_lock.locked():
+        logger.info("Skipping water refresh while another refresh is running")
+        return False
+
     async with _water_refresh_lock:
-        cached = await _redis_store.get_json("status:water")
-        if isinstance(cached, dict):
-            return cached
         result = await _fetch_water_status()
+        if result.get("source_available") is False:
+            return False
         await _redis_store.set_json("status:water", result, config.STATUS_CACHE_TTL_SECONDS)
-        return result
+        return True
 
 
 async def _fetch_water_status():
@@ -247,6 +311,11 @@ async def _fetch_water_status():
             post.get("published_at"),
         )
         if outage and is_water_outage_active(outage):
+            outage["has_outage"] = (
+                is_water_outage_currently_active(outage)
+                if outage.get("from_time") and outage.get("to_time")
+                else None
+            )
             active_outages.append(outage)
 
     if active_outages:
