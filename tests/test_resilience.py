@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import api
-from app.main import app
 
 
 @pytest.mark.asyncio
@@ -257,7 +256,7 @@ async def test_power_status_ignores_expired_planned_outage_in_redis(monkeypatch,
     assert result.message == "current"
 
 
-def test_status_route_returns_fallback_after_refresh_timeout(monkeypatch, tmp_path):
+def test_status_route_returns_fallback_after_refresh_timeout(monkeypatch, tmp_path, test_app):
     fallback_file = tmp_path / "last_status.json"
     fallback_file.write_text(
         '{"city":"Новояворівськ","operator":"Нафтогаз Тепло",'
@@ -276,7 +275,7 @@ def test_status_route_returns_fallback_after_refresh_timeout(monkeypatch, tmp_pa
 
     monkeypatch.setattr(api, "_fetch_power_status", timeout_fetch)
 
-    response = TestClient(app).get("/api/v1/status")
+    response = TestClient(test_app).get("/api/v1/status")
 
     assert response.status_code == 200
     assert response.json()["message"] == "saved"
