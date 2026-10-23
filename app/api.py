@@ -1,6 +1,7 @@
 # app/api.py
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -39,7 +40,7 @@ from app.loe_schedule import fetch_loe_schedule, is_loe_schedule_current
 from app.models import PowerStatus
 from app.ocr import extract_schedule_from_image
 from app.parser import parse_power_text
-from app.redis_store import RedisStore
+from app.redis_store import RedisStore, stable_key
 from app.telegram_html import fetch_latest_posts
 from app.water import get_water_status
 
@@ -60,11 +61,13 @@ _status_cache_time: float = 0
 _status_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _status_locks_guard = threading.Lock()
 _ocr_gate = threading.Lock()
+_ocr_memory_cache: dict[str, dict] = {}
 STATUS_REFRESH_INTERVAL_SECONDS = 300
 STATUS_MAX_AGE_SECONDS = (
     STATUS_REFRESH_INTERVAL_SECONDS + config.SETTINGS.status_refresh_timeout_seconds
 )
 POWER_SCHEDULE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+OCR_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 class StatusRefreshUnavailable(RuntimeError):
@@ -84,6 +87,19 @@ def current_status_date(now: Optional[datetime] = None) -> str:
         timezone = None
     current = now or (datetime.now(timezone) if timezone else datetime.now())
     return current.date().isoformat()
+
+
+def _current_local_datetime(now: Optional[datetime] = None) -> datetime:
+    try:
+        timezone = ZoneInfo(config.TIMEZONE)
+    except ZoneInfoNotFoundError:
+        timezone = None
+    current = now or (datetime.now(timezone) if timezone else datetime.now())
+    if timezone is None:
+        return current.replace(tzinfo=None) if current.tzinfo else current
+    if current.tzinfo is None:
+        return current.replace(tzinfo=timezone)
+    return current.astimezone(timezone)
 
 
 def _valid_status_date(value: object) -> Optional[str]:
@@ -377,7 +393,7 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
     if _valid_status_date(date) is None or not intervals:
         return False
 
-    now = now or datetime.now()
+    now = _current_local_datetime(now)
     latest_end = None
 
     for interval in intervals:
@@ -386,7 +402,7 @@ def is_planned_outage_active(parsed: dict, now: Optional[datetime] = None) -> bo
             continue
 
         try:
-            end_at = datetime.fromisoformat(f"{date}T{to_time}:00")
+            end_at = datetime.fromisoformat(f"{date}T{to_time}:00").replace(tzinfo=now.tzinfo)
         except ValueError:
             continue
 
@@ -411,7 +427,8 @@ def is_schedule_interval_active(
     except (IndexError, ValueError):
         return False
 
-    now = now or datetime.now()
+    now = _current_local_datetime(now)
+    end_at = end_at.replace(tzinfo=now.tzinfo)
     return end_at >= now
 
 
@@ -445,6 +462,39 @@ def _overall_confidence(conf) -> float:
     if isinstance(conf, (int, float)):
         return float(conf)
     return 0.8
+
+
+def _ocr_cache_key(post: dict, image_digest: str) -> Optional[str]:
+    post_id = post.get("post_id")
+    image_url = post.get("image")
+    if not isinstance(post_id, str) or not post_id:
+        return None
+    if not isinstance(image_url, str) or not image_url:
+        return None
+    return stable_key("ocr:v1", f"{post_id}\n{image_url}\n{image_digest}")
+
+
+def _image_digest(image_path: str) -> str:
+    digest = hashlib.sha256()
+    with open(image_path, "rb") as image_file:
+        for chunk in iter(lambda: image_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _remember_ocr_result(cache_key: str, value: dict) -> None:
+    _ocr_memory_cache[cache_key] = value
+    while len(_ocr_memory_cache) > 64:
+        _ocr_memory_cache.pop(next(iter(_ocr_memory_cache)))
+
+
+def _is_cacheable_ocr_result(value: object) -> bool:
+    """Cache only OCR results with a real date and structured data."""
+    if not isinstance(value, dict) or _valid_status_date(value.get("date")) is None:
+        return False
+    if value.get("type") == "NO_OUTAGES":
+        return isinstance(value.get("groups"), dict) and not value["groups"]
+    return isinstance(value.get("groups"), dict) and bool(value["groups"])
 
 
 def build_status_from_ocr(ocr: dict, post_date: Optional[str]) -> Optional[dict]:
@@ -1128,20 +1178,43 @@ async def _fetch_power_status():
     candidates: dict[str, tuple[dict, Optional[str]]] = {}
     seen_images: set[str] = set()
 
-    for post in reversed(posts):
+    async def record_candidate(parsed: dict, published_at: Optional[str]) -> None:
+        status_date = _valid_status_date(parsed.get("date"))
+        if status_date is None:
+            return
+        previous = candidates.get(status_date)
+        if previous is not None and not _should_replace_publication(previous[1], published_at):
+            return
+        candidates[status_date] = (parsed, published_at)
+        # Persist validated dates immediately so a later OCR timeout cannot
+        # discard a status already found in this refresh.
+        try:
+            await save_dated_status(parsed, published_at)
+        except Exception:
+            logger.warning(
+                "Could not persist dated power status for %s",
+                status_date,
+                exc_info=True,
+            )
+
+    ordered_posts = sorted(
+        posts,
+        key=lambda post: _published_timestamp(post.get("published_at")) or float("-inf"),
+        reverse=True,
+    )
+    # Text is cheap and authoritative when present; process it before images.
+    text_posts = [post for post in ordered_posts if post.get("text")]
+    image_posts = [post for post in ordered_posts if not post.get("text")]
+
+    for post in text_posts:
         parsed_text = parse_power_text(post.get("text", ""))
         if parsed_text:
             if not is_planned_outage_active(parsed_text):
                 continue
-            published_at = post.get("published_at")
             parsed_text = dict(parsed_text)
-            status_date = _valid_status_date(parsed_text.get("date"))
-            if status_date is not None:
-                previous = candidates.get(status_date)
-                if previous is None or _should_replace_publication(previous[1], published_at):
-                    candidates[status_date] = (parsed_text, published_at)
-            continue
+            await record_candidate(parsed_text, post.get("published_at"))
 
+    for post in image_posts:
         try:
             if not post.get("image"):
                 continue
@@ -1155,7 +1228,32 @@ async def _fetch_power_status():
                 "Downloaded Telegram image in %.3fs",
                 time.perf_counter() - download_started,
             )
-            ocr = await extract_schedule_with_gate(image_path)
+            try:
+                try:
+                    image_digest = _image_digest(image_path)
+                except OSError:
+                    logger.warning("Could not hash OCR image %s", image_path, exc_info=True)
+                    image_digest = None
+                cache_key = _ocr_cache_key(post, image_digest) if image_digest else None
+                ocr = _ocr_memory_cache.get(cache_key) if cache_key else None
+                if ocr is None and cache_key:
+                    cached_ocr = await _redis_store.get_json(cache_key)
+                    if _is_cacheable_ocr_result(cached_ocr):
+                        ocr = cached_ocr
+                        _remember_ocr_result(cache_key, cached_ocr)
+                        logger.debug(
+                            "Using cached OCR for Telegram post %s",
+                            post.get("post_id"),
+                        )
+
+                if ocr is None:
+                    ocr = await extract_schedule_with_gate(image_path)
+                    if cache_key and _is_cacheable_ocr_result(ocr):
+                        _remember_ocr_result(cache_key, ocr)
+                        await _redis_store.set_json(cache_key, ocr, OCR_CACHE_TTL_SECONDS)
+            finally:
+                _remove_ocr_image(image_path)
+
             if not ocr:
                 continue
 
@@ -1165,21 +1263,13 @@ async def _fetch_power_status():
             if not is_group_schedule_active(parsed_image):
                 continue
 
-            status_date = _valid_status_date(parsed_image.get("date"))
-            if status_date is not None:
-                published_at = post.get("published_at")
-                previous = candidates.get(status_date)
-                if previous is None or _should_replace_publication(previous[1], published_at):
-                    candidates[status_date] = (parsed_image, published_at)
+            await record_candidate(parsed_image, post.get("published_at"))
 
         except Exception as e:
             logger.error("OCR error: %s", e, exc_info=True)
 
     if not candidates:
         raise StatusRefreshUnavailable("No valid dated status was produced by the upstream source")
-
-    for parsed, published_at in candidates.values():
-        await save_dated_status(parsed, published_at)
 
     current = await load_dated_status(current_status_date())
     if current is not None and _is_current_dated_status(current):

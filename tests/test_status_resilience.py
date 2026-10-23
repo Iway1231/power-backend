@@ -4,6 +4,7 @@ import os
 import tempfile
 import threading
 import time
+from datetime import datetime
 
 import httpx
 import pytest
@@ -13,7 +14,14 @@ from app.models import PowerStatus
 
 
 @pytest.fixture(autouse=True)
-def clear_status_cache():
+def isolate_status_storage(monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    history_dir = data_dir / "history"
+    data_dir.mkdir()
+    history_dir.mkdir()
+    monkeypatch.setattr(api.config, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api, "HISTORY_DIR", history_dir)
+    monkeypatch.setattr(api, "FALLBACK_FILE", data_dir / "last_status.json")
     api._status_cache = None
     api._status_cache_time = 0
     yield
@@ -54,13 +62,13 @@ async def test_health_remains_available_during_slow_ocr(monkeypatch, tmp_path, t
         transport=httpx.ASGITransport(app=test_app),
         base_url="http://testserver",
     ) as client:
-        status_task = asyncio.create_task(client.get("/api/v1/status"))
+        status_task = asyncio.create_task(api.refresh_power_status_once())
         assert await asyncio.wait_for(asyncio.to_thread(started.wait), timeout=1)
         health_response = await asyncio.wait_for(client.get("/api/v1/health"), timeout=0.2)
-        status_response = await status_task
+        refresh_result = await status_task
 
     assert health_response.status_code == 200
-    assert status_response.status_code == 200
+    assert refresh_result is False
 
 
 @pytest.mark.asyncio
@@ -77,12 +85,28 @@ async def test_concurrent_status_requests_share_one_refresh(monkeypatch):
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.05)
-        return [{"text": "Електроенергії немає з 23:00 по 23:30"}]
+        return [
+            {
+                "text": (f"Електроенергії немає {datetime.now():%d.%m.%Y} з 23:00 по 23:30"),
+                "published_at": datetime.now().isoformat(),
+            }
+        ]
+
+    parsed = {
+        "type": "PLANNED_OUTAGE",
+        "date": datetime.now().date().isoformat(),
+        "intervals": [{"from_time": "23:00", "to_time": "23:30", "status": "OFF"}],
+        "groups": None,
+        "message": "test",
+        "confidence": 1.0,
+    }
 
     monkeypatch.setattr(api._redis_store, "get_json", no_redis_get)
     monkeypatch.setattr(api._redis_store, "set_json", no_redis_set)
     monkeypatch.setattr(api, "fetch_latest_posts", slow_posts)
+    monkeypatch.setattr(api, "parse_power_text", lambda _text: parsed)
 
+    assert await api.refresh_power_status_once()
     results = await asyncio.gather(*(api.get_power_status() for _ in range(8)))
 
     assert calls == 1
@@ -106,10 +130,11 @@ async def test_status_refresh_works_when_redis_is_unavailable(monkeypatch, tmp_p
     monkeypatch.setattr(api._redis_store, "set_json", unavailable_set)
     monkeypatch.setattr(api, "fetch_latest_posts", no_posts)
 
-    result = await api.get_power_status()
+    assert not await api.refresh_power_status_once()
+    with pytest.raises(api.HTTPException) as error:
+        await api.get_power_status()
 
-    assert isinstance(result, PowerStatus)
-    assert result.message == "Відключень не заплановано"
+    assert error.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -152,8 +177,7 @@ async def test_last_valid_status_file_is_not_overwritten_by_empty_refresh(monkey
     monkeypatch.setattr(api._redis_store, "set_json", no_redis_set)
     monkeypatch.setattr(api, "fetch_latest_posts", no_posts)
 
-    with pytest.raises(api.StatusRefreshUnavailable):
-        await api._fetch_power_status()
+    assert not await api.refresh_power_status_once()
 
     assert json.loads(original)["message"] == saved.message
     assert fallback_file.read_text(encoding="utf-8") == original
@@ -182,7 +206,7 @@ async def test_downloaded_image_is_removed_after_ocr(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "download_image", download)
     monkeypatch.setattr(api, "extract_schedule_from_image", lambda _path: None)
 
-    await api.get_power_status()
+    assert await api.refresh_power_status_once() is False
 
     assert not image_path.exists()
 
@@ -226,10 +250,14 @@ def test_download_image_uses_timeout_and_removes_file_on_http_error(monkeypatch)
     monkeypatch.setattr(image_loader.httpx, "AsyncClient", FakeClient)
 
     with tempfile.TemporaryDirectory() as workdir:
-        monkeypatch.chdir(workdir)
-        with pytest.raises(httpx.HTTPStatusError):
-            asyncio.run(image_loader.download_image("https://example.test/image.jpg"))
-        assert not os.listdir("images")
+        original_cwd = os.getcwd()
+        try:
+            monkeypatch.chdir(workdir)
+            with pytest.raises(httpx.HTTPStatusError):
+                asyncio.run(image_loader.download_image("https://example.test/image.jpg"))
+            assert not os.listdir("images")
+        finally:
+            os.chdir(original_cwd)
 
     assert received_timeout is not None
 
@@ -273,10 +301,14 @@ def test_download_image_rejects_oversized_body_and_cleans_temp_file(monkeypatch)
     monkeypatch.setattr(image_loader.httpx, "AsyncClient", FakeClient)
 
     with tempfile.TemporaryDirectory() as workdir:
-        monkeypatch.chdir(workdir)
-        with pytest.raises(ValueError, match="maximum allowed size"):
-            asyncio.run(image_loader.download_image("https://example.test/large.jpg"))
-        assert not os.listdir("images")
+        original_cwd = os.getcwd()
+        try:
+            monkeypatch.chdir(workdir)
+            with pytest.raises(ValueError, match="maximum allowed size"):
+                asyncio.run(image_loader.download_image("https://example.test/large.jpg"))
+            assert not os.listdir("images")
+        finally:
+            os.chdir(original_cwd)
 
 
 def test_download_image_timeout_removes_partial_file(monkeypatch, tmp_path):

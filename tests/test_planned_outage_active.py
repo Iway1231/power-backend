@@ -35,7 +35,7 @@ def test_future_planned_outage_is_active():
     assert is_planned_outage_active(parsed, now=datetime(2026, 6, 6, 13, 45))
 
 
-def test_planned_outage_with_unknown_end_stays_active():
+def test_planned_outage_with_unknown_end_is_inactive():
     parsed = {
         "type": "PLANNED_OUTAGE",
         "date": "2026-06-05",
@@ -47,4 +47,14 @@ def test_planned_outage_with_unknown_end_stays_active():
         ],
     }
 
-    assert is_planned_outage_active(parsed, now=datetime(2026, 6, 6, 13, 45))
+    assert not is_planned_outage_active(parsed, now=datetime(2026, 6, 6, 13, 45))
+
+
+def test_planned_outage_without_date_is_inactive():
+    parsed = {
+        "type": "PLANNED_OUTAGE",
+        "date": None,
+        "intervals": [{"from_time": "09:00", "to_time": "12:00"}],
+    }
+
+    assert not is_planned_outage_active(parsed, now=datetime(2026, 6, 6, 10, 0))

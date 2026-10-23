@@ -46,6 +46,7 @@ async def fetch_latest_posts(limit: int = 20) -> list[dict]:
 
         posts.append(
             {
+                "post_id": msg.get("data-post"),
                 "text": text,
                 "image": image,
                 "published_at": published_at,
